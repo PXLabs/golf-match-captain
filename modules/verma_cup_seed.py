@@ -129,6 +129,44 @@ COURSES = [
     ),
 ]
 
+# ──────────────────────────────────────────────────────────────
+# Extra courses — personal course library (not linked to Verma Cup rounds)
+# ──────────────────────────────────────────────────────────────
+# Each entry: (name, location, tee_decks, recommended_tee)
+# tee_deck:   (name, rating, slope, par, total_yards, stroke_index, notes)
+#
+# Stroke index is the same across all tees for each course
+# (SI reflects hole difficulty order, not yardage).
+
+_DUNLUCE_SI   = [7,13,17,1,15,11,5,9,3,16,8,12,18,2,10,4,14,6]
+_PORTSTEWART_SI = [11,7,13,5,1,15,17,3,9,10,4,18,16,12,14,6,2,8]
+
+EXTRA_COURSES = [
+    (
+        "Royal Portrush — Dunluce Links",
+        "Portrush, Northern Ireland",
+        [
+            ("Blue",  76.1, 140, 72, 7333, _DUNLUCE_SI, "Championship tees. 2019 / 2025 Open Championship venue."),
+            ("White", 72.4, 131, 72, 6729, _DUNLUCE_SI, "Recommended visitors tee"),
+            ("Green", 70.7, 127, 71, 6353, _DUNLUCE_SI, "Par 71 — H11 & H17 play as par 4"),
+            ("Black", 68.8, 123, 71, 5950, _DUNLUCE_SI, "Forward tees. Par 71 — H11 & H17 play as par 4"),
+        ],
+        "White",
+    ),
+    (
+        "Portstewart — Strand Course",
+        "Portstewart, Co. Londonderry",
+        [
+            ("Black",     74.2, 131, 73, 7043, _PORTSTEWART_SI, "Championship tees. Par 73 — H1 & H17 play as par 5"),
+            ("Blue",      72.6, 127, 72, 6604, _PORTSTEWART_SI, "Recommended visitors tee. Par 72 — H1 plays as par 5"),
+            ("White",     69.5, 117, 71, 6075, _PORTSTEWART_SI, "Men's standard tees. Note: played as 15 holes (1-15) Oct 2025–Jun 2026"),
+            ("White (L)", 75.7, 128, 71, 6075, _PORTSTEWART_SI, "Ladies' tees — same physical tee as Men's White"),
+            ("Gold (L)",  73.8, 123, 71, 5730, _PORTSTEWART_SI, "Ladies' forward tees"),
+        ],
+        "Blue",
+    ),
+]
+
 # Rounds: (round_number, date, course_index, format_code, holes, tee_name, notes)
 # course_index = 0-based index into COURSES list above
 ROUNDS = [
@@ -244,12 +282,29 @@ def load_verma_cup(force: bool = False) -> dict:
     # Mark event as ACTIVE
     execute("UPDATE event SET status = 'ACTIVE' WHERE event_id = ?", (event_id,))
 
+    # ── Extra courses (personal course library) ──
+    for course_name, location, tee_decks, _recommended_tee in EXTRA_COURSES:
+        cid = add_course(course_name, location)
+        for tee_name, rating, slope, par, yards, stroke_idx, notes in tee_decks:
+            add_tee_deck(
+                course_id=cid,
+                name=tee_name,
+                rating=rating,
+                slope=slope,
+                par=par,
+                stroke_index=stroke_idx,
+                total_yards=yards,
+                notes=notes,
+            )
+
+    total_courses = len(COURSES) + len(EXTRA_COURSES)
     return {
         "success": True,
         "message": (
             f"Verma Cup 2026 loaded: {len(PLAYERS)} players, "
-            f"{len(COURSES)} courses, 7 rounds. Event is ACTIVE."
+            f"{len(COURSES)} Verma Cup courses + {len(EXTRA_COURSES)} extra courses, "
+            f"7 rounds. Event is ACTIVE."
         ),
         "players": len(PLAYERS),
-        "courses": len(COURSES),
+        "courses": total_courses,
     }

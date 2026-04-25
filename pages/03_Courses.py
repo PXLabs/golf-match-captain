@@ -204,43 +204,41 @@ for course in courses:
             else:
                 st.caption("No tee decks yet. Add one below.")
 
-            st.markdown("---")
-            st.markdown("**Add a Tee Deck**")
+            with st.expander("➕ Add a Tee Deck", expanded=False):
+                with st.form(f"add_deck_{cid}", clear_on_submit=True):
+                    a_col1, a_col2, a_col3, a_col4 = st.columns(4)
+                    a_name   = a_col1.text_input("Tee Name *", placeholder="e.g. White")
+                    a_rating = a_col2.number_input("Course Rating *",
+                                                    min_value=55.0, max_value=80.0,
+                                                    step=0.1, value=70.0)
+                    a_slope  = a_col3.number_input("Slope Rating *",
+                                                     min_value=55, max_value=155,
+                                                     step=1, value=113)
+                    a_par    = a_col4.number_input("Par", min_value=60, max_value=75,
+                                                step=1, value=72)
 
-            with st.form(f"add_deck_{cid}", clear_on_submit=True):
-                a_col1, a_col2, a_col3, a_col4 = st.columns(4)
-                a_name   = a_col1.text_input("Tee Name *", placeholder="e.g. White")
-                a_rating = a_col2.number_input("Course Rating *",
-                                                min_value=55.0, max_value=80.0,
-                                                step=0.1, value=70.0)
-                a_slope  = a_col3.number_input("Slope Rating *",
-                                                min_value=55, max_value=155,
-                                                step=1, value=113)
-                a_par    = a_col4.number_input("Par", min_value=60, max_value=75,
-                                            step=1, value=72)
+                    a_col5, a_col6 = st.columns([1, 2])
+                    a_yards = a_col5.number_input("Total Yards", min_value=0, step=1, value=0)
+                    a_notes = a_col6.text_input("Notes", placeholder="e.g. Championship tees")
 
-                a_col5, a_col6 = st.columns([1, 2])
-                a_yards = a_col5.number_input("Total Yards", min_value=0, step=1, value=0)
-                a_notes = a_col6.text_input("Notes", placeholder="e.g. Championship tees")
+                    a_yards_val = a_yards if a_yards > 0 else None
+                    a_notes_val = a_notes.strip() if a_notes.strip() else None
 
-                a_yards_val = a_yards if a_yards > 0 else None
-                a_notes_val = a_notes.strip() if a_notes.strip() else None
+                    st.markdown("**Stroke Index**")
+                    st.caption("Enter hole-by-hole SI from the scorecard (each of 1–18 once).")
+                    si_new = _render_si_grid([], key_prefix=f"new_{cid}")
 
-                st.markdown("**Stroke Index**")
-                st.caption("Enter hole-by-hole SI from the scorecard (each of 1–18 once).")
-                si_new = _render_si_grid([], key_prefix=f"new_{cid}")
-
-                deck_submitted = st.form_submit_button("Add Tee Deck", type="primary")
-                if deck_submitted:
-                    if not a_name.strip():
-                        st.error("Tee name is required.")
-                    else:
-                        try:
-                            add_tee_deck(cid, a_name, a_rating, a_slope, a_par, si_new, a_yards_val, a_notes_val)
-                            st.success(f"{a_name.strip()} tee deck added.")
-                            st.rerun()
-                        except ValueError as e:
-                            st.error(str(e))
+                    deck_submitted = st.form_submit_button("Add Tee Deck", type="primary")
+                    if deck_submitted:
+                        if not a_name.strip():
+                            st.error("Tee name is required.")
+                        else:
+                            try:
+                                add_tee_deck(cid, a_name, a_rating, a_slope, a_par, si_new, a_yards_val, a_notes_val)
+                                st.success(f"{a_name.strip()} tee deck added.")
+                                st.rerun()
+                            except ValueError as e:
+                                st.error(str(e))
 
 
 
