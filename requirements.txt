@@ -1,0 +1,16 @@
+# Golf Match Captain — Python Dependencies
+
+# Core framework
+streamlit>=1.35.0
+pandas>=2.0.0
+plotly>=5.18.0
+
+# AI advisor
+anthropic>=0.28.0
+python-dotenv>=1.0.0
+
+# Phase 2A — Golf Canada automation (optional)
+# Install separately after core setup:
+#   pip install playwright
+#   playwright install chromium
+playwright>=1.44.0
