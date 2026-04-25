@@ -1,4 +1,5 @@
 # Golf Match Captain — Python Dependencies
+# Streamlit Community Cloud deployment — April 2026
 
 # Core framework
 streamlit>=1.35.0
@@ -9,8 +10,11 @@ plotly>=5.18.0
 anthropic>=0.28.0
 python-dotenv>=1.0.0
 
-# Phase 2A — Golf Canada automation (optional)
-# Install separately after core setup:
-#   pip install playwright
-#   playwright install chromium
-playwright>=1.44.0
+# Supabase — shared data layer (publish pairings, sync results)
+supabase>=2.0.0
+
+# NOTE: playwright is intentionally excluded from this file.
+# Golf Canada handicap sync (golf_canada.py) requires playwright but
+# detects its absence gracefully — the app runs in mock mode without it.
+# To enable live Golf Canada sync on a local machine:
+#   pip install playwright && playwright install chromium

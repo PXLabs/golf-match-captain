@@ -1,0 +1,20 @@
+# Golf Match Captain — Streamlit Configuration
+# .streamlit/config.toml
+# Applies to both local development and Streamlit Community Cloud.
+
+[server]
+# Disable file watcher on Cloud (no local filesystem to watch)
+fileWatcherType = "none"
+# Prevent Streamlit from opening a browser tab on startup
+headless = true
+
+[browser]
+# Disable usage statistics reporting
+gatherUsageStats = false
+
+[theme]
+primaryColor        = "#2E7D32"   # Golf green — buttons, links, active elements
+backgroundColor     = "#FFFFFF"   # Page background
+secondaryBackgroundColor = "#F1F8E9"  # Sidebar and card backgrounds
+textColor           = "#1B1B1B"   # Body text
+font                = "sans serif"

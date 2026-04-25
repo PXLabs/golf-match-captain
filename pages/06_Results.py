@@ -25,6 +25,12 @@ from modules.results import (
     RESULT_OPTIONS,
 )
 from modules.handicap import FORMAT_LABELS
+from modules.supabase_publisher import (
+    is_configured as supabase_configured,
+    publish_pairings,
+    sync_results,
+    get_round_supabase_status,
+)
 
 initialise_database()
 
@@ -62,6 +68,29 @@ rounds   = list_rounds(selected_eid)
 if not rounds:
     st.warning("No rounds configured. Go to Event Setup to add rounds.")
     st.stop()
+
+# ---------------------------------------------------------------
+# Supabase — Sync Results panel
+# ---------------------------------------------------------------
+if supabase_configured():
+    with st.expander("🔄 Sync Results from Supabase", expanded=False):
+        st.caption(
+            "Pull completed match results entered via the Scoring App into GMC. "
+            "Results already entered manually in GMC are not overwritten."
+        )
+        if st.button("🔄 Sync Now", type="primary", key="sync_results_btn"):
+            with st.spinner("Syncing results from Supabase…"):
+                result = sync_results(selected_eid)
+            if result["success"]:
+                st.success(result["message"])
+                if result["results_synced"] > 0:
+                    st.rerun()
+            else:
+                st.error(result["message"])
+else:
+    st.info("💡 **Supabase not configured.** Add SUPABASE_URL and SUPABASE_SERVICE_KEY to Streamlit secrets to enable Publish and Sync.", icon="ℹ️")
+
+st.markdown("---")
 
 # ---------------------------------------------------------------
 # Running scoreboard (always visible at top)
@@ -195,6 +224,51 @@ for tab, rnd in zip(tabs, rounds):
             rc1.metric(ev_ta, f"{round_score['points_a']:.1f} pts")
             rc2.metric(ev_tb, f"{round_score['points_b']:.1f} pts")
             rc3.metric("Pending", round_score["matches_pending"])
+
+            # ── Supabase: Publish Pairings ──────────────────────
+            if supabase_configured():
+                supa_status = get_round_supabase_status(rnd["round_number"])
+                status_badge = {
+                    "DRAFT":       "⚪ DRAFT — not yet published",
+                    "LOCKED":      "🟢 LOCKED — pairings live in weather app",
+                    "COMPLETED":   "✅ COMPLETED",
+                    "NOT_FOUND":   "⚠️ Round not found in Supabase",
+                    "UNCONFIGURED": "",
+                    "ERROR":       "⚠️ Supabase error",
+                }.get(supa_status, supa_status)
+
+                pub_col1, pub_col2 = st.columns([3, 1])
+                pub_col1.caption(f"Supabase status: {status_badge}")
+
+                if supa_status in ("DRAFT", "NOT_FOUND", "ERROR"):
+                    if pub_col2.button(
+                        "📤 Publish Pairings",
+                        key=f"publish_{rid}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        with st.spinner("Publishing pairings to Supabase…"):
+                            pub_result = publish_pairings(rid, selected_eid)
+                        if pub_result["success"]:
+                            st.success(pub_result["message"])
+                            st.rerun()
+                        else:
+                            st.error(pub_result["message"])
+                elif supa_status == "LOCKED":
+                    if pub_col2.button(
+                        "📤 Re-publish",
+                        key=f"republish_{rid}",
+                        use_container_width=True,
+                        help="Re-publish if pairings have changed since last publish.",
+                    ):
+                        with st.spinner("Re-publishing pairings to Supabase…"):
+                            pub_result = publish_pairings(rid, selected_eid)
+                        if pub_result["success"]:
+                            st.success(pub_result["message"])
+                            st.rerun()
+                        else:
+                            st.error(pub_result["message"])
+            st.markdown("---")
 
             st.markdown("---")
 

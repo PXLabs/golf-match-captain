@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 from database.db import initialise_database, DB_PATH, fetchall
 from modules.seed_data import seed_all, clear_all_data, is_seeded
+from modules.verma_cup_seed import load_verma_cup
 
 initialise_database()
 
@@ -31,6 +32,36 @@ st.markdown("---")
 def _df_to_csv(df: pd.DataFrame) -> bytes:
     """Convert a DataFrame to CSV bytes."""
     return df.to_csv(index=False).encode("utf-8")
+
+# ---------------------------------------------------------------
+# Section 0 — Verma Cup 2026 Setup
+# ---------------------------------------------------------------
+st.subheader("⛳ Verma Cup 2026 — Load Real Data")
+
+st.markdown(
+    "Loads the real Verma Cup 2026 data — 12 players, 7 courses with full tee decks, "
+    "and the Verma Cup event with all 7 rounds configured."
+)
+
+seeded = is_seeded()
+vc_col1, vc_col2 = st.columns([3, 1])
+with vc_col1:
+    clear_first = st.checkbox(
+        "Clear existing data first (replaces test data with real Verma Cup data)",
+        value=True,
+        key="vc_clear_first",
+    )
+with vc_col2:
+    if st.button("⛳ Load Verma Cup Data", type="primary", use_container_width=True):
+        with st.spinner("Loading Verma Cup 2026 data…"):
+            result = load_verma_cup(force=clear_first)
+        if result["success"]:
+            st.success(result["message"])
+            st.rerun()
+        else:
+            st.error(result["message"])
+
+st.markdown("---")
 
 # ---------------------------------------------------------------
 # Section 1 — Test / Demo Data

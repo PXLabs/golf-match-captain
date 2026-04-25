@@ -3,3 +3,9 @@ venv/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Streamlit secrets — real values never committed
+.streamlit/secrets.toml
+
+# SQLite database — excluded from repo; initialised fresh on first run
+data/*.db
