@@ -95,10 +95,14 @@ COURSES = [
         "Cruit Island GC",
         "Kincasslagh, Donegal",
         [
-            # 9-hole course played twice. SI uses odd numbers (WHS 9-hole convention).
-            # Rating/slope cover the full 18 (both loops).
-            ("White",   70.0, 110, 34, 2505, [1,3,13,5,17,15,7,11,9],
-             "9-hole course — played as 2 loops for 18 holes. ROUND 5"),
+            # 9-hole course played as 2 loops for 18 holes.
+            # WHS convention: first loop uses odd SI values, second loop uses paired even values.
+            # Loop 1 (holes 1-9):  [1,3,13,5,17,15,7,11,9]  (odd SI)
+            # Loop 2 (holes 10-18): [2,4,14,6,18,16,8,12,10] (each = paired odd + 1)
+            # Rating/slope are for the full 18 (both loops combined).
+            ("White",   70.0, 110, 68, 5010,
+             [1,3,13,5,17,15,7,11,9, 2,4,14,6,18,16,8,12,10],
+             "9-hole course played as 2 loops (18 holes total). Par 68, yardage 5010 (2x2505). Rating/slope cover full 18. ROUND 5"),
         ],
         "White",
     ),
