@@ -32,16 +32,16 @@ from modules.events import create_event, assign_player, add_round
 PLAYERS = [
     # (name, handicap_index, team, notes)
     # Celtic Tigers — Team A
-    ("Stephen Hayward",  10.0, "A", "Captain"),
+    ("Stephen Hayward",  10.0, "A", None),
     ("Ian Gillespie",     2.8, "A", None),
     ("Bill Stanton",      8.8, "A", "Assistant Captain"),
     ("Tom Wellner",       8.2, "A", None),
     ("Hugh Kendall",     14.3, "A", None),
-    ("Peter Callahan",   24.6, "A", None),
+    ("Peter Callahan",   24.6, "A", "Captain"),
     # The Hurleys — Team B
     ("Wayne Morden",      9.0, "B", "Organiser. Index updated Apr 24 — was 7.4 on Apr 20 list"),
     ("Marc Tetro",       12.4, "B", None),
-    ("Ian Tetro",        20.7, "B", None),
+    ("Ian Tetro",        20.7, "B", "Captain"),
     ("John Sheedy",      15.0, "B", None),
     ("Mark Grebenc",     19.0, "B", None),
     ("Kevan Cowan",      32.2, "B", None),

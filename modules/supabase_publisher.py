@@ -27,6 +27,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -114,24 +115,29 @@ def _compute_adjusted_handicaps(
     return apply_handicap_mode(playing_hcs, handicap_mode, allowance_pct_decimal)
 
 
+_HC_NONE = {"strokes_a": None, "strokes_b": None, "low_handicap_idx": None,
+            "ph_a1": None, "ph_a2": None, "ph_b1": None, "ph_b2": None}
+
 def _strokes_for_match(
     match: dict,
     round_row: dict,
     format_code: str,
     allowance_pct_decimal: float,
     handicap_mode: str,
-) -> tuple[int | None, int | None, float | None]:
+) -> dict:
     """
-    Compute strokes_a, strokes_b, and low_handicap_idx for a match.
-    Returns (None, None, None) if tee data is unavailable.
+    Compute team strokes and per-player adjusted playing handicaps.
 
-    Convention:
-      strokes_a — strokes received by Team A side
-      strokes_b — strokes received by Team B side
-      One of strokes_a / strokes_b will always be 0 (the lower-HC side).
+    Returns a dict with keys:
+        strokes_a, strokes_b, low_handicap_idx   — team-level (as before)
+        ph_a1, ph_a2, ph_b1, ph_b2               — individual adjusted HCs
+                                                   (after PLAY_OFF_LOW)
+
+    ph values are used by the scoring app to determine per-hole stroke
+    allocation without needing to re-run the full WHS calculation.
     """
     if round_row.get("rating_a") is None:
-        return None, None, None
+        return _HC_NONE
 
     try:
         a1_idx = match.get("a1_idx")
@@ -139,60 +145,55 @@ def _strokes_for_match(
         b1_idx = match.get("b1_idx")
         b2_idx = match.get("b2_idx")
 
-        if format_code == "FOURSOMES_MP":
-            # Foursomes: 50% of combined team handicap (already in FORMAT_ALLOWANCES)
-            # Treat as two players, one per side
-            indices = [i for i in [a1_idx, b1_idx] if i is not None]
-            if len(indices) < 2:
-                return None, None, None
-            adj = _compute_adjusted_handicaps(
-                indices, round_row["rating_a"], round_row["slope_a"],
-                round_row["par_a"], format_code, allowance_pct_decimal, handicap_mode,
-            )
-            strokes_a = adj[0]
-            strokes_b = adj[1]
+        all_indices = [i for i in [a1_idx, a2_idx, b1_idx, b2_idx] if i is not None]
+        low_idx     = float(min(all_indices)) if all_indices else None
 
-        elif format_code in ("SINGLES_MP", "SINGLES_STROKE"):
+        if format_code in ("FOURSOMES_MP", "SINGLES_MP", "SINGLES_STROKE"):
             indices = [i for i in [a1_idx, b1_idx] if i is not None]
             if len(indices) < 2:
-                return None, None, None
+                return _HC_NONE
             adj = _compute_adjusted_handicaps(
                 indices, round_row["rating_a"], round_row["slope_a"],
                 round_row["par_a"], format_code, allowance_pct_decimal, handicap_mode,
             )
-            strokes_a = adj[0]
-            strokes_b = adj[1]
+            return {
+                "strokes_a":       adj[0],
+                "strokes_b":       adj[1],
+                "low_handicap_idx": low_idx,
+                "ph_a1":           adj[0],
+                "ph_a2":           None,
+                "ph_b1":           adj[1],
+                "ph_b2":           None,
+            }
 
         else:
-            # FOURBALL_MP and SCRAMBLE — use all available player indices
-            # Apply PLAY_OFF_LOW across all 4 players
+            # FOURBALL_MP / SCRAMBLE — PLAY_OFF_LOW across all 4 players
             slot_indices = [a1_idx, a2_idx, b1_idx, b2_idx]
             valid = [(pos, idx) for pos, idx in enumerate(slot_indices) if idx is not None]
             if len(valid) < 2:
-                return None, None, None
+                return _HC_NONE
 
             adj = _compute_adjusted_handicaps(
                 [idx for _, idx in valid],
                 round_row["rating_a"], round_row["slope_a"], round_row["par_a"],
                 format_code, allowance_pct_decimal, handicap_mode,
             )
-
-            # Map adjusted HCs back to team A (pos 0,1) and team B (pos 2,3)
             adj_by_pos = {pos: adj[i] for i, (pos, _) in enumerate(valid)}
             a_hcs = [adj_by_pos[p] for p in [0, 1] if p in adj_by_pos]
             b_hcs = [adj_by_pos[p] for p in [2, 3] if p in adj_by_pos]
 
-            # For four-ball, the team's effective strokes = min (best ball)
-            strokes_a = min(a_hcs) if a_hcs else 0
-            strokes_b = min(b_hcs) if b_hcs else 0
-
-        all_indices = [i for i in [a1_idx, a2_idx, b1_idx, b2_idx] if i is not None]
-        low_idx = float(min(all_indices)) if all_indices else None
-
-        return strokes_a, strokes_b, low_idx
+            return {
+                "strokes_a":        min(a_hcs) if a_hcs else 0,
+                "strokes_b":        min(b_hcs) if b_hcs else 0,
+                "low_handicap_idx": low_idx,
+                "ph_a1":            adj_by_pos.get(0),
+                "ph_a2":            adj_by_pos.get(1),
+                "ph_b1":            adj_by_pos.get(2),
+                "ph_b2":            adj_by_pos.get(3),
+            }
 
     except Exception:
-        return None, None, None
+        return _HC_NONE
 
 
 # ──────────────────────────────────────────────────────────────
@@ -226,13 +227,14 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
     round_row = fetchone(
         """
         SELECT r.*,
-               c.name          AS course_name,
-               ta.rating       AS rating_a,
-               ta.slope        AS slope_a,
-               ta.par          AS par_a,
-               tb.rating       AS rating_b,
-               tb.slope        AS slope_b,
-               tb.par          AS par_b
+               c.name              AS course_name,
+               ta.rating           AS rating_a,
+               ta.slope            AS slope_a,
+               ta.par              AS par_a,
+               ta.stroke_index     AS stroke_index_a,
+               tb.rating           AS rating_b,
+               tb.slope            AS slope_b,
+               tb.par              AS par_b
         FROM   round r
         LEFT JOIN course   c  ON c.course_id = r.course_id
         LEFT JOIN tee_deck ta ON ta.tee_id   = r.tee_id_a
@@ -310,7 +312,7 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
             errors.append(f"Match {match_number}: player(s) not found in Supabase — {missing}")
             continue
 
-        strokes_a, strokes_b, low_idx = _strokes_for_match(
+        hc = _strokes_for_match(
             m, round_row, format_code, allowance_pct_decimal, handicap_mode,
         )
 
@@ -322,10 +324,14 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
             "status":            "LOCKED",
             "result_entered_by": "GMC",
         }
-        if strokes_a is not None:
-            update_data["strokes_a"]        = strokes_a
-            update_data["strokes_b"]        = strokes_b
-            update_data["low_handicap_idx"] = low_idx
+        if hc["strokes_a"] is not None:
+            update_data["strokes_a"]        = hc["strokes_a"]
+            update_data["strokes_b"]        = hc["strokes_b"]
+            update_data["low_handicap_idx"] = hc["low_handicap_idx"]
+        # Per-player adjusted playing handicaps for hole-by-hole stroke allocation
+        for key in ("ph_a1", "ph_a2", "ph_b1", "ph_b2"):
+            if hc[key] is not None:
+                update_data[key] = hc[key]
 
         res = (
             client.table("matches")
@@ -339,12 +345,24 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
         else:
             errors.append(f"Match {match_number}: Supabase update returned no data — check match_number alignment")
 
-    # ── Lock the round ──
+    # ── Lock the round + store tee deck data for scoring app ──
     if published > 0:
-        client.table("rounds").update({
+        round_update: dict = {
             "status":    "LOCKED",
             "locked_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", supa_round_id).execute()
+        }
+        # Stroke index — stored as JSON text in SQLite, needs parsing
+        si_raw = round_row.get("stroke_index_a")
+        if si_raw is not None:
+            try:
+                si_list = json.loads(si_raw) if isinstance(si_raw, str) else list(si_raw)
+                round_update["stroke_index"]  = si_list
+                round_update["course_rating"] = round_row.get("rating_a")
+                round_update["course_slope"]  = round_row.get("slope_a")
+                round_update["course_par"]    = round_row.get("par_a")
+            except Exception:
+                pass  # tee deck data is best-effort; won't block the lock
+        client.table("rounds").update(round_update).eq("id", supa_round_id).execute()
 
     if errors:
         msg = f"{published}/{len(matches)} match(es) published. Issues: {'; '.join(errors)}"
