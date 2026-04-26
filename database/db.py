@@ -2,23 +2,24 @@
 db.py — Database connection helper and generic query utilities.
 Golf Match Captain | PostgreSQL / Supabase
 
-Replaces the SQLite implementation. All helper function signatures
-are identical so no changes are needed in the modules that call them.
+Uses a connection pool cached via st.cache_resource so the TCP + SSL +
+auth handshake happens once per app session instead of once per query.
+This is the main performance fix for Supabase free tier.
 
 Credentials: add SUPABASE_DB_URL to .streamlit/secrets.toml
-  SUPABASE_DB_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres"
-  (Use the Session Pooler URL from Supabase → Settings → Database → Connection string)
+  SUPABASE_DB_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
 """
 
 from __future__ import annotations
 
 import os
 import psycopg2
+import psycopg2.pool
 import psycopg2.extras
 
 
 # ---------------------------------------------------------------
-# Connection
+# Connection URL
 # ---------------------------------------------------------------
 
 def _get_db_url() -> str:
@@ -39,9 +40,68 @@ def _get_db_url() -> str:
     )
 
 
-def get_connection() -> psycopg2.extensions.connection:
-    """Open and return a psycopg2 connection."""
-    return psycopg2.connect(_get_db_url())
+# ---------------------------------------------------------------
+# Connection pool — cached for the lifetime of the Streamlit app
+# ---------------------------------------------------------------
+
+def _get_pool() -> psycopg2.pool.SimpleConnectionPool:
+    """
+    Return a cached connection pool.
+    st.cache_resource keeps it alive across Streamlit reruns so we
+    don't pay the connection overhead on every query.
+    """
+    try:
+        import streamlit as st
+
+        @st.cache_resource
+        def _build_pool():
+            return psycopg2.pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=5,
+                dsn=_get_db_url(),
+            )
+
+        return _build_pool()
+    except Exception:
+        # Fallback for non-Streamlit contexts (e.g. tests / CLI)
+        return psycopg2.pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=5,
+            dsn=_get_db_url(),
+        )
+
+
+def _get_conn() -> psycopg2.extensions.connection:
+    """
+    Get a connection from the pool.
+    If the pooled connection has gone stale (Supabase free tier can pause),
+    clears the cache and rebuilds the pool automatically.
+    """
+    try:
+        conn = _get_pool().getconn()
+        if conn.closed:
+            raise psycopg2.OperationalError("Stale connection")
+        # Quick liveness check
+        conn.cursor().execute("SELECT 1")
+        return conn
+    except Exception:
+        # Clear the cached pool and try once more with a fresh connection
+        try:
+            import streamlit as st
+            st.cache_resource.clear()
+        except Exception:
+            pass
+        conn = _get_pool().getconn()
+        return conn
+
+
+def _put_conn(conn) -> None:
+    """Return a connection to the pool."""
+    try:
+        if not conn.closed:
+            _get_pool().putconn(conn)
+    except Exception:
+        pass
 
 
 def initialise_database() -> None:
@@ -59,25 +119,25 @@ def initialise_database() -> None:
 
 def fetchall(sql: str, params: tuple = ()) -> list[dict]:
     """Execute a SELECT and return all rows as plain dicts."""
-    conn = get_connection()
+    conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             return [dict(r) for r in cur.fetchall()]
     finally:
-        conn.close()
+        _put_conn(conn)
 
 
 def fetchone(sql: str, params: tuple = ()) -> dict | None:
     """Execute a SELECT and return the first row as a dict, or None."""
-    conn = get_connection()
+    conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
             return dict(row) if row else None
     finally:
-        conn.close()
+        _put_conn(conn)
 
 
 def execute(sql: str, params: tuple = ()) -> int:
@@ -89,7 +149,7 @@ def execute(sql: str, params: tuple = ()) -> int:
     For UPDATE / DELETE: returns rowcount.
     """
     is_insert = sql.strip().upper().startswith("INSERT")
-    conn = get_connection()
+    conn = _get_conn()
     try:
         with conn.cursor() as cur:
             if is_insert:
@@ -102,16 +162,22 @@ def execute(sql: str, params: tuple = ()) -> int:
                 cur.execute(sql, params)
                 conn.commit()
                 return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        _put_conn(conn)
 
 
 def executemany(sql: str, param_list: list[tuple]) -> None:
     """Execute an INSERT / UPDATE for a list of parameter tuples."""
-    conn = get_connection()
+    conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.executemany(sql, param_list)
             conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        _put_conn(conn)
