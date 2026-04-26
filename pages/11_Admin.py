@@ -1,12 +1,13 @@
 """
-08_Data_Management.py — Data Management
+11_Admin.py — Data Management
 Golf Match Captain
 
 Covers:
+  - Load Verma Cup 2026 real data
   - Load test/demo data
   - Clear all data (with confirmation)
-  - Download SQLite database backup
   - Export data to CSV (players, events, results, career stats)
+  - Raw table import/export
 """
 
 import sys, io, csv, json
@@ -16,14 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 import pandas as pd
-from database.db import initialise_database, DB_PATH, fetchall
+from database.db import initialise_database, fetchall, execute
 from modules.seed_data import seed_all, clear_all_data, is_seeded
 from modules.verma_cup_seed import load_verma_cup
 
 initialise_database()
 
 st.title("⚙️ Admin & Archive")
-st.caption("Seed demo data, clear the database, backup, restore, and raw table export/import.")
+st.caption("Seed data, clear the database, export to CSV, and manage raw tables.")
 st.markdown("---")
 
 # ---------------------------------------------------------------
@@ -136,42 +137,16 @@ with st.form("clear_confirm_form"):
 st.markdown("---")
 
 # ---------------------------------------------------------------
-# Section 3 — Database Archive Restore
+# Section 3 — Data Persistence
 # ---------------------------------------------------------------
-st.subheader("💾 Database Archive Restore")
+st.subheader("💾 Database")
 
-st.markdown(
-    "Download a complete snapshot of the database, or upload an existing `.db` file to completely overwrite the current system state."
+st.info(
+    "**Data is stored permanently in Supabase PostgreSQL.** "
+    "It persists across app restarts, redeployments, and inactivity — "
+    "no backups or restores needed. "
+    "Use the CSV export tabs below to download a copy of your data at any time."
 )
-
-col_bkp, col_rst = st.columns(2)
-
-with col_bkp:
-    st.markdown("**Download Snapshot (.db)**")
-    if DB_PATH.exists():
-        db_bytes  = DB_PATH.read_bytes()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        st.download_button(
-            label="⬇️ Download golf_captain.db",
-            data=db_bytes,
-            file_name=f"golf_captain_backup_{timestamp}.db",
-            mime="application/octet-stream",
-            use_container_width=True,
-        )
-        db_size = DB_PATH.stat().st_size
-        st.caption(f"Database size: {db_size / 1024:.1f} KB")
-    else:
-        st.info("Database file not found.")
-
-with col_rst:
-    st.markdown("**Upload & Restore Snapshot (.db)**")
-    uploaded_db = st.file_uploader("Replace database with snapshot", type=["db", "sqlite", "sqlite3"], label_visibility="collapsed")
-    if uploaded_db:
-        if st.button("⚠️ Restore Database File (Irreversible)", type="primary", use_container_width=True):
-            DB_PATH.write_bytes(uploaded_db.getvalue())
-            initialise_database()
-            st.success("✅ Database restored successfully! The app will now reload.")
-            st.rerun()
 
 st.markdown("---")
 
@@ -201,7 +176,6 @@ with export_tab1:
     if not players_rows:
         st.caption("No players in the database.")
     else:
-        # Roster summary
         roster_df = pd.DataFrame([dict(r) for r in players_rows])
         roster_df.columns = ["ID", "Name", "CPGA ID", "Index",
                                "Tee Preference", "Notes"]
@@ -343,7 +317,6 @@ with export_tab4:
             e.name                          AS event,
             e.start_date,
             ep.team,
-            -- Count wins for team A players
             SUM(CASE
                 WHEN ep.team = 'A' AND m.result = 'A' THEN 1
                 WHEN ep.team = 'B' AND m.result = 'B' THEN 1
@@ -369,7 +342,7 @@ with export_tab4:
             m.team_b_player1_id = ep.player_id OR
             m.team_b_player2_id = ep.player_id
         ) AND m.result IS NOT NULL
-        GROUP BY p.player_id, e.event_id
+        GROUP BY p.player_id, p.name, e.event_id, e.name, e.start_date, ep.team
         ORDER BY p.name, e.start_date
     """)
 
@@ -380,7 +353,6 @@ with export_tab4:
         career_df.columns = ["Player", "Event", "Date", "Team",
                                "W", "L", "H", "Points"]
 
-        # Aggregate totals per player
         totals = (
             career_df.groupby("Player")
             .agg(Events=("Event", "count"),
@@ -420,12 +392,12 @@ st.markdown("---")
 st.subheader("🗄️ Raw Table Management")
 
 st.markdown(
-    "Import and export raw database tables via CSV. "
-    "**Note:** Replacing a table deletes all existing rows, which may cascade to dependent records."
+    "Export raw database tables to CSV. "
+    "Use the download buttons to get a copy of any table."
 )
 
 TABLES = [
-    "player", "course", "tee_deck", "event", 
+    "player", "course", "tee_deck", "event",
     "event_player", "round", "match", "score_record", "player_tag"
 ]
 
@@ -435,7 +407,7 @@ table_rows = fetchall(f"SELECT * FROM {sel_table}")
 if table_rows:
     table_df = pd.DataFrame([dict(r) for r in table_rows])
     st.dataframe(table_df, use_container_width=True, hide_index=True)
-    
+
     st.download_button(
         label=f"⬇️ Download {sel_table}.csv",
         data=_df_to_csv(table_df),
@@ -443,33 +415,4 @@ if table_rows:
         mime="text/csv",
     )
 else:
-    table_df = pd.DataFrame()
     st.caption(f"Table '{sel_table}' is currently empty.")
-
-st.markdown("**📤 Upload CSV to Table**")
-up_csv = st.file_uploader(f"Upload CSV to {sel_table}", type=["csv"], label_visibility="collapsed")
-mode = st.radio("Upload Mode", ["Add / Upsert (Keep existing data)", "Replace (Delete existing data)"], horizontal=True)
-
-if up_csv:
-    if st.button("Commit CSV Upload", type="primary"):
-        import sqlite3
-        conn = sqlite3.connect(str(DB_PATH))
-        new_df = pd.read_csv(up_csv)
-        try:
-            if "Replace" in mode:
-                conn.execute(f"DELETE FROM {sel_table}")
-                conn.commit()
-            
-            new_df.to_sql(sel_table, conn, if_exists="append", index=False)
-            conn.commit()
-            st.success(f"Successfully loaded {len(new_df)} rows into {sel_table}!")
-            st.rerun()
-        except sqlite3.IntegrityError as e:
-            st.error(f"Integrity Error (Duplicate unique ID or missing dependency): {e}")
-        except Exception as e:
-            st.error(f"Error loading CSV: {e}")
-        finally:
-            conn.close()
-
-
-
