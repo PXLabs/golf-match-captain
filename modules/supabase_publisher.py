@@ -406,15 +406,24 @@ def sync_results(event_id: int) -> dict:
     if not gmc_rounds:
         return {"success": False, "message": "No rounds found for this event in GMC.", "results_synced": 0}
 
-    rnum_to_rid  = {r["round_number"]: r["round_id"] for r in gmc_rounds}
-    round_numbers = list(rnum_to_rid.keys())
+    # Build mapping: supabase round UUID → GMC round_id (integer)
+    # match_detail uses round_id (UUID), not round_number
+    supa_uuid_to_gmc_rid = {}
+    for rnd in gmc_rounds:
+        supa_uuid = _round_uuid(client, rnd["round_number"])
+        if supa_uuid:
+            supa_uuid_to_gmc_rid[supa_uuid] = rnd["round_id"]
+
+    supa_round_uuids = list(supa_uuid_to_gmc_rid.keys())
+    if not supa_round_uuids:
+        return {"success": False, "message": "No matching rounds found in Supabase. Has the seed data been run?", "results_synced": 0}
 
     # ── Fetch completed matches from Supabase match_detail view ──
     res = (
         client.table("match_detail")
-        .select("round_number, match_number, result, result_detail, points_a, points_b")
+        .select("round_id, match_number, result, result_detail, points_a, points_b")
         .eq("match_status", "COMPLETED")
-        .in_("round_number", round_numbers)
+        .in_("round_id", supa_round_uuids)
         .execute()
     )
 
@@ -426,15 +435,15 @@ def sync_results(event_id: int) -> dict:
     errors  = []
 
     for row in res.data:
-        rnum          = row["round_number"]
-        mnum          = row["match_number"]
-        supa_result   = row.get("result")
-        supa_detail   = row.get("result_detail") or ""
+        supa_round_uuid = row["round_id"]
+        mnum            = row["match_number"]
+        supa_result     = row.get("result")
+        supa_detail     = row.get("result_detail") or ""
 
         if not supa_result:
             continue
 
-        gmc_round_id = rnum_to_rid.get(rnum)
+        gmc_round_id = supa_uuid_to_gmc_rid.get(supa_round_uuid)
         if not gmc_round_id:
             continue
 
@@ -443,7 +452,7 @@ def sync_results(event_id: int) -> dict:
             (gmc_round_id, mnum),
         )
         if not gmc_match:
-            errors.append(f"Round {rnum} Match {mnum}: not found in GMC draw")
+            errors.append(f"Match {mnum} (round_id {supa_round_uuid[:8]}…): not found in GMC draw")
             continue
 
         if gmc_match["result"] is not None:
