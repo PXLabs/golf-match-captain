@@ -29,6 +29,16 @@ from modules.handicap import FORMAT_LABELS
 initialise_database()
 
 # ---------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------
+
+def _pair_label(n1, n2):
+    if n1 and n2:
+        return f"{n1} & {n2}"
+    return n1 or "TBD"
+
+
+# ---------------------------------------------------------------
 # Password gate
 # ---------------------------------------------------------------
 
@@ -232,9 +242,3 @@ if upcoming:
 
 st.markdown("---")
 st.caption("Golf Match Captain · Read-only view · Scores update in real time.")
-
-
-def _pair_label(n1, n2):
-    if n1 and n2:
-        return f"{n1} & {n2}"
-    return n1 or "TBD"
