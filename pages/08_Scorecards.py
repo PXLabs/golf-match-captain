@@ -127,6 +127,15 @@ with st.expander("How strokes are calculated", expanded=False):
 # ── Generate button ───────────────────────────────────────────────
 st.subheader("Generate PDF")
 
+compact = st.checkbox(
+    "Compact mode — 2 cards per page (caddie / rain size)",
+    value=True,
+    help=(
+        "Fits two scorecards on one portrait letter sheet, each roughly half-page. "
+        "Ideal for wet weather or caddie use. Un-check for a full-size card per page."
+    ),
+)
+
 col_btn, col_info = st.columns([2, 3])
 with col_btn:
     generate = st.button(
@@ -136,21 +145,31 @@ with col_btn:
         disabled=(not match_count),
     )
 with col_info:
-    st.caption(
-        f"{len(match_count)} match card(s) · portrait letter · "
-        "one page per match · print double-sided or one-up"
-    )
+    if compact:
+        st.caption(
+            f"{len(match_count)} match card(s) · 2 per page · portrait letter · "
+            "compact caddie size"
+        )
+    else:
+        st.caption(
+            f"{len(match_count)} match card(s) · 1 per page · portrait letter · "
+            "full size"
+        )
 
 if generate:
     with st.spinner("Calculating strokes and building PDF…"):
         try:
-            pdf_bytes = generate_round_scorecards(rid)
+            pdf_bytes = generate_round_scorecards(rid, compact=compact)
             kb = len(pdf_bytes) // 1024
+            size_tag = "COMPACT" if compact else "FULL"
             fname = (
                 f"scorecards_R{sel_round['round_number']}_"
+                f"{size_tag}_"
                 f"{sel_round['date'].replace('-', '')}.pdf"
             )
-            st.success(f"PDF ready — {len(match_count)} scorecard(s) · {kb} KB")
+            st.success(
+                f"PDF ready — {len(match_count)} scorecard(s) · {kb} KB · {size_tag}"
+            )
             st.download_button(
                 label="⬇️ Download Scorecards PDF",
                 data=pdf_bytes,
