@@ -127,15 +127,23 @@ with st.expander("How strokes are calculated", expanded=False):
 # ── Generate button ───────────────────────────────────────────────
 st.subheader("Generate PDF")
 
+# Layout is driven by the round's hole count, not the size:
+#   18-hole → 1 card per page (fold at centre = front 9 / back 9)
+#    9-hole → 2 cards per page (cut on dashed line)
+# Size controls visual scale only.
+_holes     = sel_round["holes"]
+_layout    = "1 per page — fold for front/back" if _holes == 18 else "2 per page — cut on line"
+_n_pages   = len(match_count) if _holes == 18 else (len(match_count) + 1) // 2
+
 SIZE_OPTIONS = {
-    "Full — 1 per page":                  "full",
-    "Compact — 2 per page (~66% scale)":  "compact",
-    "Small — 3 per page (~50% scale)":    "small",
+    "Full (easiest to read)":        "full",
+    "Compact (~66% scale)":          "compact",
+    "Small (~50% scale — pocket)":   "small",
 }
 SIZE_DESC = {
-    "full":    f"{len(match_count)} card(s) · 1 per page · full size · portrait letter",
-    "compact": f"{len(match_count)} card(s) · 2 per page · ~66% scale · caddie-friendly",
-    "small":   f"{len(match_count)} card(s) · 3 per page · ~50% scale · rain / pocket size",
+    "full":    f"{len(match_count)} match(es) · {_n_pages} page(s) · {_layout} · full size",
+    "compact": f"{len(match_count)} match(es) · {_n_pages} page(s) · {_layout} · ~66% scale",
+    "small":   f"{len(match_count)} match(es) · {_n_pages} page(s) · {_layout} · ~50% scale",
 }
 
 size_label = st.radio(
@@ -144,8 +152,10 @@ size_label = st.radio(
     index=1,   # default: Compact
     horizontal=True,
     help=(
-        "Full = easiest to read. Compact = two on one sheet, fits a scorecard wallet. "
-        "Small = three on one sheet, smallest possible — good for rain."
+        "All sizes use the same layout for the round type — "
+        "18-hole rounds get 1 card per page (fold in half for front/back), "
+        "9-hole rounds get 2 cards per page (cut on the dashed line). "
+        "Size only controls how large the text and rows are."
     ),
 )
 size = SIZE_OPTIONS[size_label]

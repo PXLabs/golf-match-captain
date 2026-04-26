@@ -2,19 +2,22 @@
 scorecard_pdf.py — Match Play Scorecard PDF Generator
 Golf Match Captain | Verma Cup 2026
 
-Three output sizes:
-  FULL    — 1 card per page, portrait letter (8.5 × 11") — full-size, easy to read
-  COMPACT — 2 cards per page, portrait letter (~66% scale) — caddie-friendly
-  SMALL   — 3 cards per page, portrait letter (~50% scale) — rain/pocket size
+Layout is driven by the round's hole count, not the size setting:
+  18-hole → 1 card per page  (fold at centre: front 9 / back 9)
+   9-hole → 2 cards per page (cut on dashed line)
 
-All sizes:
-  - Pre-printed stroke dots in top-right corner of each score box
-  - Open dot (○) = half stroke (9-hole only) — wins a tied hole
-  - Two dots (●●) = 2 strokes (very high HC)
+Three visual sizes (FULL / COMPACT / SMALL) scale text and row heights only.
+Net-score rows removed — hole result row carries pre-printed team abbreviations.
+
+All cards:
+  - Stroke dots pre-printed in top-right corner of each score box
+  - Open dot ○ = half stroke (9-hole)  ·  ●● = 2 strokes (high HC)
+  - Hole result: CT · H · TH pre-printed — player circles winner
+  - Match status: hint printed in label (+n / AS / −n)
   - Match ID centred for AI photo scanning
   - Celtic Tigers green / The Hurleys red colour coding
   - Player codes CT-P1 / TH-P1 for AI row anchoring
-  - Circle-the-result footer with signature lines
+  - Fold guide (18-hole) or cut line (9-hole) between the two halves
 """
 
 from __future__ import annotations
@@ -51,15 +54,16 @@ PAGE_W, PAGE_H = letter   # 612 × 792 pts
 MARGIN_X = 24
 CW = PAGE_W - 2 * MARGIN_X   # 564 usable width
 
-# Column widths (fixed — same for both modes)
+# Column widths (fixed across all sizes)
 NAME_W = 90
 HC_W   = 22
 OUT_W  = 56
-HOLE_W = (CW - NAME_W - HC_W - OUT_W) // 9   # 44
+HOLE_W = (CW - NAME_W - HC_W - OUT_W) // 9   # 44 pts
 
 
 # ================================================================
-# Size configuration
+# Size configuration  (net rows removed — space redistributed to
+# rh_result and rh_status)
 # ================================================================
 
 @dataclass
@@ -70,59 +74,53 @@ class CardConfig:
     rh_seclabel: int
     rh_hole:     int
     rh_si:       int
-    rh_score:    int    # must stay large enough to write a score
-    rh_best:     int
+    rh_score:    int
     rh_sep:      int
-    rh_result:   int
-    rh_status:   int
+    rh_result:   int   # hole result row — tall enough to circle options
+    rh_status:   int   # match status row
     rh_footer:   int
     section_gap: int
     margin_top:  int
     dot_r:       float
-    # font sizes
-    f_id:          float
-    f_team:        float
-    f_info:        float
-    f_player:      float
-    f_code:        float
-    f_hdr:         float
-    f_si:          float
-    f_note:        float
-    f_footer:      float
-    cards_per_page: int   # 1 = full, 2 = compact, 3 = small
+    f_id:        float
+    f_team:      float
+    f_info:      float
+    f_player:    float
+    f_code:      float
+    f_hdr:       float
+    f_si:        float
+    f_note:      float
+    f_footer:    float
 
 
-# ── Full size — 1 per page ────────────────────────────────────────
+# ── Full size ─────────────────────────────────────────────────────
 FULL = CardConfig(
     rh_header=62,  rh_note=11, rh_seclabel=13, rh_hole=18, rh_si=13,
-    rh_score=33,   rh_best=17, rh_sep=3,       rh_result=20, rh_status=15,
+    rh_score=33,   rh_sep=3,   rh_result=36,   rh_status=22,
     rh_footer=64,  section_gap=8,  margin_top=26,
     dot_r=2.5,
     f_id=22, f_team=11, f_info=8, f_player=9, f_code=6.5,
     f_hdr=8, f_si=7, f_note=6, f_footer=7.5,
-    cards_per_page=1,
 )
 
-# ── Compact (~66%) — 2 per page ───────────────────────────────────
+# ── Compact (~66%) ────────────────────────────────────────────────
 COMPACT = CardConfig(
     rh_header=46,  rh_note=9,  rh_seclabel=11, rh_hole=14, rh_si=10,
-    rh_score=29,   rh_best=13, rh_sep=2,       rh_result=15, rh_status=11,
+    rh_score=29,   rh_sep=2,   rh_result=25,   rh_status=16,
     rh_footer=50,  section_gap=5,  margin_top=16,
     dot_r=2.0,
     f_id=16, f_team=9.5, f_info=7, f_player=8.5, f_code=6,
     f_hdr=7.5, f_si=6.5, f_note=5.5, f_footer=7,
-    cards_per_page=2,
 )
 
-# ── Small (~50%) — 3 per page ─────────────────────────────────────
+# ── Small (~50%) ──────────────────────────────────────────────────
 SMALL = CardConfig(
     rh_header=34,  rh_note=7,  rh_seclabel=8,  rh_hole=10, rh_si=7,
-    rh_score=21,   rh_best=10, rh_sep=2,       rh_result=11, rh_status=8,
+    rh_score=21,   rh_sep=2,   rh_result=18,   rh_status=13,
     rh_footer=34,  section_gap=4,  margin_top=12,
     dot_r=1.6,
     f_id=12, f_team=7.5, f_info=5.5, f_player=7, f_code=5,
     f_hdr=6, f_si=5.5, f_note=4.5, f_footer=5.5,
-    cards_per_page=3,
 )
 
 _SIZE_MAP: dict[str, CardConfig] = {
@@ -192,47 +190,51 @@ def get_scorecard_data(round_id: int) -> dict:
 def _calc_playing_hc(index, tee, fmt, allowance) -> int:
     if not tee:
         return _round_half_up(index)
-    d = playing_handicap_for_format(index, tee["slope"], tee["rating"], tee["par"], fmt, allowance)
+    d = playing_handicap_for_format(
+        index, tee["slope"], tee["rating"], tee["par"], fmt, allowance
+    )
     return d["playing_hc"]
 
 
 def compute_hole_strokes(match, tee_a, tee_b, fmt, hc_mode, allowance, holes) -> dict:
-    keys = ["a1", "a2", "b1", "b2"]
+    keys    = ["a1", "a2", "b1", "b2"]
     indices = {k: match.get(f"{k}_index") for k in keys}
     tee_map = {"a1": tee_a, "a2": tee_a, "b1": tee_b, "b2": tee_b}
 
     play_hcs = {}
     for k in keys:
         idx = indices[k]
-        play_hcs[k] = _calc_playing_hc(idx, tee_map[k], fmt, allowance) if idx is not None else 0
+        play_hcs[k] = (
+            _calc_playing_hc(idx, tee_map[k], fmt, allowance) if idx is not None else 0
+        )
 
     if hc_mode == "PLAY_OFF_LOW":
-        vals = [play_hcs[k] for k in keys]
+        vals     = [play_hcs[k] for k in keys]
         play_hcs = dict(zip(keys, apply_handicap_mode(vals, "PLAY_OFF_LOW")))
 
     half_flags = {k: False for k in keys}
     if holes == 9:
         for k in keys:
-            raw = play_hcs[k] / 2.0
-            play_hcs[k] = int(math.floor(raw))
+            raw          = play_hcs[k] / 2.0
+            play_hcs[k]  = int(math.floor(raw))
             half_flags[k] = (raw - math.floor(raw)) >= 0.5
 
     result = {}
     for k in keys:
-        si  = _parse_si(tee_map[k])
-        phc = play_hcs[k]
+        si     = _parse_si(tee_map[k])
+        phc    = play_hcs[k]
         detail = stroke_allocation_detail(phc, si, holes)
         hole_strokes = [d["strokes"] for d in detail]
 
         if holes == 9 and half_flags[k]:
-            si_9 = si[:9]
+            si_9        = si[:9]
             sorted_idxs = sorted(range(9), key=lambda i: si_9[i])
-            half_pos = phc % 9
+            half_pos    = phc % 9
             if half_pos < len(sorted_idxs):
                 hole_strokes[sorted_idxs[half_pos]] = 0.5
 
-        result[k] = hole_strokes
-        result[k + "_total"] = phc + (0.5 if half_flags[k] else 0)
+        result[k]             = hole_strokes
+        result[k + "_total"]  = phc + (0.5 if half_flags[k] else 0)
 
     return result
 
@@ -288,24 +290,38 @@ def _score_box(c, x, y, w, h, strokes_list, hole_idx, dot_r):
     elif s == 1:
         _dot(c, x + w - 5.5, dy, dot_r, filled=True)
     elif s >= 2:
-        _dot(c, x + w - 5.5,              dy, dot_r, filled=True)
+        _dot(c, x + w - 5.5,               dy, dot_r, filled=True)
         _dot(c, x + w - 5.5 - dot_r*2 - 2, dy, dot_r, filled=True)
+
+
+# ================================================================
+# Team abbreviation helper
+# ================================================================
+
+def _team_abbr(name: str) -> str:
+    """First initial of each word — 'Celtic Tigers' → 'CT', 'The Hurleys' → 'TH'."""
+    return "".join(p[0] for p in name.split()[:3]).upper()
 
 
 # ================================================================
 # Grid section
 # ================================================================
 
-def _draw_grid_section(c, x, y_top, holes_range, si_values,
-                       team_a, team_b, match, strokes,
-                       is_singles, cfg: CardConfig) -> float:
-    n = len(holes_range)
+def _draw_grid_section(
+    c, x, y_top, holes_range, si_values,
+    team_a, team_b, match, strokes, is_singles, cfg: CardConfig,
+) -> float:
+    n           = len(holes_range)
     hole_offset = 0 if holes_range[0] == 1 else 9
 
     x_name = x
     x_hc   = x_name + NAME_W
     x_h    = [x_hc + HC_W + h * HOLE_W for h in range(n)]
     x_out  = x_h[-1] + HOLE_W
+
+    abbr_a = _team_abbr(team_a)
+    abbr_b = _team_abbr(team_b)
+    hint   = f"{abbr_a} · H · {abbr_b}"
 
     y = y_top
 
@@ -315,8 +331,7 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
     c.rect(x, sl_y, CW, cfg.rh_seclabel, fill=1, stroke=0)
     c.setFillColor(C_WHITE)
     c.setFont("Helvetica-Bold", cfg.f_hdr - 0.5)
-    sec = f"Holes {holes_range[0]}–{holes_range[-1]}"
-    c.drawString(x + 5, sl_y + 2.5, sec)
+    c.drawString(x + 5, sl_y + 2.5, f"Holes {holes_range[0]}–{holes_range[-1]}")
     y = sl_y
 
     # ── Hole numbers ─────────────────────────────────────────────
@@ -332,12 +347,11 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
     out_lbl = "Out" if holes_range[0] == 1 else "In"
     _txt(c, x_out, rh_y + 4, out_lbl, cfg.f_hdr, bold=True, color=C_WHITE,
          align="center", col_w=OUT_W)
-    # faint dividers
     c.setStrokeColor(colors.Color(1, 1, 1, alpha=0.2))
     c.setLineWidth(0.3)
     for h in range(n):
         c.line(x_h[h], rh_y, x_h[h], rh_y + cfg.rh_hole)
-    c.line(x_hc, rh_y, x_hc, rh_y + cfg.rh_hole)
+    c.line(x_hc,  rh_y, x_hc,  rh_y + cfg.rh_hole)
     c.line(x_out, rh_y, x_out, rh_y + cfg.rh_hole)
     y = rh_y
 
@@ -358,7 +372,6 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
     def draw_player(key, name, idx_val, code, team_color):
         nonlocal y
         py = y - cfg.rh_score
-        # Name cell
         _cell(c, x_name, py, NAME_W, cfg.rh_score, fill=C_WHITE)
         c.setFillColor(C_GRAY_D)
         c.setFont("Helvetica", cfg.f_code)
@@ -366,20 +379,20 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
         c.setFillColor(team_color)
         c.setFont("Helvetica-Bold", cfg.f_player)
         display = name
-        while c.stringWidth(display, "Helvetica-Bold", cfg.f_player) > NAME_W - 6 and len(display) > 4:
+        while (
+            c.stringWidth(display, "Helvetica-Bold", cfg.f_player) > NAME_W - 6
+            and len(display) > 4
+        ):
             display = display[:-1]
         c.drawString(x_name + 3, py + 5, display)
-        # HC cell
         _cell(c, x_hc, py, HC_W, cfg.rh_score, fill=C_WHITE)
         if idx_val is not None:
             _txt(c, x_hc, py + cfg.rh_score // 2 - 4,
                  str(int(round(idx_val))), cfg.f_player - 1,
                  color=C_BLACK, align="center", col_w=HC_W)
-        # Score boxes
         ps = strokes.get(key, [0] * 18)
         for h in range(n):
             _score_box(c, x_h[h], py, HOLE_W, cfg.rh_score, ps, hole_offset + h, cfg.dot_r)
-        # Out cell
         _cell(c, x_out, py, OUT_W, cfg.rh_score, fill=C_WHITE)
         total = strokes.get(key + "_total", 0)
         if total:
@@ -388,24 +401,11 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
                  color=C_GRAY_D, align="center", col_w=OUT_W)
         y = py
 
-    def draw_best_row(tname, tcolor):
-        nonlocal y
-        by = y - cfg.rh_best
-        _cell(c, x_name, by, NAME_W, cfg.rh_best, fill=C_GRAY_L)
-        _txt(c, x_name, by + 3, f"{tname} net", cfg.f_si + 0.5, bold=True, color=tcolor)
-        _cell(c, x_hc, by, HC_W, cfg.rh_best, fill=C_GRAY_L)
-        for h in range(n):
-            _cell(c, x_h[h], by, HOLE_W, cfg.rh_best, fill=C_GRAY_L)
-        _cell(c, x_out, by, OUT_W, cfg.rh_best, fill=C_GRAY_L)
-        y = by
-
-    # ── Team A ───────────────────────────────────────────────────
+    # ── Team A players ───────────────────────────────────────────
     if match.get("a1_name"):
         draw_player("a1", match["a1_name"], match.get("a1_index"), "CT-P1", C_GREEN)
     if not is_singles and match.get("a2_name"):
         draw_player("a2", match["a2_name"], match.get("a2_index"), "CT-P2", C_GREEN)
-    if not is_singles:
-        draw_best_row(team_a, C_GREEN)
 
     # ── Separator ────────────────────────────────────────────────
     sep_y = y - cfg.rh_sep
@@ -413,28 +413,34 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
     c.rect(x, sep_y, CW, cfg.rh_sep, fill=1, stroke=0)
     y = sep_y
 
-    # ── Team B ───────────────────────────────────────────────────
+    # ── Team B players ───────────────────────────────────────────
     if match.get("b1_name"):
         draw_player("b1", match["b1_name"], match.get("b1_index"), "TH-P1", C_RED)
     if not is_singles and match.get("b2_name"):
         draw_player("b2", match["b2_name"], match.get("b2_index"), "TH-P2", C_RED)
-    if not is_singles:
-        draw_best_row(team_b, C_RED)
 
-    # ── Hole result ──────────────────────────────────────────────
-    hr_y = y - cfg.rh_result
+    # ── Hole result — pre-printed circle options ──────────────────
+    hr_y    = y - cfg.rh_result
+    hint_sz = max(cfg.f_si - 1.0, 4.0)
     _cell(c, x_name, hr_y, NAME_W, cfg.rh_result, fill=C_GRAY_L, bc=C_GRAY_M, lw=1.0)
-    _txt(c, x_name, hr_y + 4, "Hole result", cfg.f_hdr, bold=True, color=C_BLACK)
+    _txt(c, x_name, hr_y + cfg.rh_result - cfg.f_hdr - 3,
+         "Hole result", cfg.f_hdr, bold=True, color=C_BLACK)
+    _txt(c, x_name, hr_y + 3, "circle winner →", hint_sz, color=C_GRAY_D)
     _cell(c, x_hc, hr_y, HC_W, cfg.rh_result, fill=C_GRAY_L)
     for h in range(n):
-        _cell(c, x_h[h], hr_y, HOLE_W, cfg.rh_result)   # blank write-in
+        _cell(c, x_h[h], hr_y, HOLE_W, cfg.rh_result)
+        # Faint pre-printed options — player circles the winner
+        c.setFont("Helvetica", hint_sz)
+        c.setFillColor(colors.Color(0.72, 0.72, 0.72))
+        hw = c.stringWidth(hint, "Helvetica", hint_sz)
+        c.drawString(x_h[h] + (HOLE_W - hw) / 2, hr_y + 3, hint)
     _cell(c, x_out, hr_y, OUT_W, cfg.rh_result, fill=C_GRAY_L)
     y = hr_y
 
     # ── Match status ─────────────────────────────────────────────
     ms_y = y - cfg.rh_status
     _cell(c, x_name, ms_y, NAME_W, cfg.rh_status, fill=C_GRAY_L)
-    _txt(c, x_name, ms_y + 2.5, "Match status", cfg.f_si, color=C_GRAY_D)
+    _txt(c, x_name, ms_y + 3, "Status  +n / AS / −n", cfg.f_si, color=C_GRAY_D)
     _cell(c, x_hc, ms_y, HC_W, cfg.rh_status, fill=C_GRAY_L)
     for h in range(n):
         _cell(c, x_h[h], ms_y, HOLE_W, cfg.rh_status, fill=C_GRAY_L)
@@ -448,12 +454,13 @@ def _draw_grid_section(c, x, y_top, holes_range, si_values,
 # Full scorecard
 # ================================================================
 
-def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
-                    y_start: float | None = None):
+def _draw_scorecard(
+    c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
+    y_start: float | None = None,
+) -> float:
     """
-    Draw one complete scorecard. y_start overrides the default top margin
-    (used when placing two cards on one page).
-    Returns the y position after the footer.
+    Draw one complete scorecard starting at y_start (default = top margin).
+    Returns foot_y — the bottom edge of the footer rectangle.
     """
     holes      = rnd["holes"]
     fmt        = rnd["format_code"]
@@ -490,12 +497,10 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
                  hdr_y + cfg.rh_header - cfg.f_id - cfg.f_info - 5, info)
 
     course_line = f"{rnd['course_name']}  ·  {rnd['date']}"
-    c.setFont("Helvetica", cfg.f_info)
     clw = c.stringWidth(course_line, "Helvetica", cfg.f_info)
     c.drawString(mid_x - clw / 2,
                  hdr_y + cfg.rh_header - cfg.f_id - cfg.f_info * 2 - 9, course_line)
 
-    # Team names + players — left / right
     c.setFont("Helvetica-Bold", cfg.f_team)
     c.setFillColor(C_GREEN)
     c.drawString(x + 6, hdr_y + cfg.rh_header - cfg.f_team - 2, team_a)
@@ -504,9 +509,9 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
     c.drawString(x + CW - 6 - tbw, hdr_y + cfg.rh_header - cfg.f_team - 2, team_b)
 
     c.setFont("Helvetica", cfg.f_info)
+    off = cfg.f_team + cfg.f_info + 4
     c.setFillColor(C_GREEN)
     a1 = match.get("a1_name", ""); a2 = match.get("a2_name", "")
-    off = cfg.f_team + cfg.f_info + 4
     if a1: c.drawString(x + 6, hdr_y + cfg.rh_header - off, a1)
     if a2: c.drawString(x + 6, hdr_y + cfg.rh_header - off - cfg.f_info - 2, a2)
     c.setFillColor(C_RED)
@@ -517,7 +522,6 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
     if b2:
         bw = c.stringWidth(b2, "Helvetica", cfg.f_info)
         c.drawString(x + CW - 6 - bw, hdr_y + cfg.rh_header - off - cfg.f_info - 2, b2)
-
     y = hdr_y
 
     # ── AI note bar ──────────────────────────────────────────────
@@ -526,14 +530,12 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
     c.rect(x, note_y, CW, cfg.rh_note, fill=1, stroke=0)
     c.setFont("Helvetica", cfg.f_note)
     c.setFillColor(C_GRAY_D)
-    note = (
-        f"AI ref: {match_id}  ·  Dots = stroke indicator (top-right of box)  ·  "
-        "○ = half stroke  ·  Handwritten = gross score  ·  Circle result below"
-    )
-    c.drawString(x + 4, note_y + 2, note)
+    c.drawString(x + 4, note_y + 2,
+                 f"AI ref: {match_id}  ·  Dots = stroke indicator (top-right of box)  ·  "
+                 "○ = half stroke  ·  Handwritten = gross score  ·  Circle result below")
     y = note_y
 
-    # ── Grids ────────────────────────────────────────────────────
+    # ── Score grids ──────────────────────────────────────────────
     if holes == 9:
         y = _draw_grid_section(c, x, y, list(range(1, 10)), si[:9],
                                team_a, team_b, match, strokes, is_singles, cfg)
@@ -568,16 +570,15 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
     c.setFillColor(C_GRAY_D)
     c.drawString(opt_x + 3, res_y - 3, "by _____ holes / A/S")
 
-    # Stroke rule note
-    if holes == 9:
-        note9 = "9-hole: strokes = ½ × 18-hole difference  ·  ○ half stroke wins a tied hole"
-    else:
-        note9 = "18-hole: full handicap strokes  ·  no half strokes"
+    note9 = (
+        "9-hole: strokes = ½ × 18-hole difference  ·  ○ half stroke wins a tied hole"
+        if holes == 9 else
+        "18-hole: full handicap strokes  ·  no half strokes"
+    )
     c.setFont("Helvetica", cfg.f_note + 0.5)
     c.setFillColor(C_GRAY_D)
     c.drawString(x + 6, foot_y + cfg.rh_footer - 26, note9)
 
-    # Signature lines
     sig_w = CW / 3
     sig_y = foot_y + 18
     for i, lbl in enumerate([f"Signed {team_a}:", f"Signed {team_b}:", "Time submitted:"]):
@@ -593,50 +594,43 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
 
 
 # ================================================================
-# Public API
+# Height estimation  (fallback for blank-slot placeholders only)
 # ================================================================
 
 def _estimate_card_height(matches: list, rnd: dict, cfg: CardConfig) -> float:
-    """
-    Estimate the rendered height of one scorecard (points) from config constants.
-    Used to position multiple cards on a single page.
-    """
     is_singles    = not bool(matches[0].get("a2_name") or matches[0].get("b2_name"))
     n_player_rows = 2 if is_singles else 4
-    n_best_rows   = 0 if is_singles else 2
 
-    # One grid section height
-    def section_h():
+    def section_h() -> float:
         return (
-            cfg.rh_seclabel + cfg.rh_hole + cfg.rh_si +
-            n_player_rows * cfg.rh_score +
-            n_best_rows   * cfg.rh_best +
-            cfg.rh_sep + cfg.rh_result + cfg.rh_status
+            cfg.rh_seclabel + cfg.rh_hole + cfg.rh_si
+            + n_player_rows * cfg.rh_score
+            + cfg.rh_sep + cfg.rh_result + cfg.rh_status
         )
 
-    h = (
-        cfg.rh_header + cfg.rh_note +
-        section_h() +
-        cfg.rh_footer + 4   # 4pt gap before footer
-    )
+    h = cfg.rh_header + cfg.rh_note + section_h() + cfg.rh_footer + 4
     if rnd["holes"] == 18:
         h += cfg.section_gap + section_h()
     return h
 
 
+# ================================================================
+# Public API
+# ================================================================
+
 def generate_round_scorecards(
     round_id: int,
     size: str = "full",
-    compact: bool = False,   # legacy — maps to size="compact"
+    compact: bool = False,   # legacy kwarg — maps to size="compact"
 ) -> bytes:
     """
     Generate a multi-page PDF of scorecards for every match in the round.
 
-    size="full"    → 1 full-size card per page (portrait letter)
-    size="compact" → 2 cards per page (~66% scale, caddie-friendly)
-    size="small"   → 3 cards per page (~50% scale, rain/pocket size)
+    Layout is determined by the round's hole count:
+      18-hole → 1 card per page  (fold guide at page centre)
+       9-hole → 2 cards per page (dashed cut line between them)
 
-    The legacy `compact=True` kwarg still works and maps to size="compact".
+    size = "full" | "compact" | "small"  — controls visual scale only.
     """
     if compact and size == "full":
         size = "compact"
@@ -654,33 +648,41 @@ def generate_round_scorecards(
     if not matches:
         raise ValueError("No matches found for this round. Add the draw first.")
 
+    holes = rnd["holes"]
     total = len(matches)
+    cpp   = 1 if holes == 18 else 2   # cards per page — driven by holes
 
     buf = BytesIO()
     c   = rl_canvas.Canvas(buf, pagesize=letter)
     c.setTitle(f"Scorecards – Round {rnd['round_number']} – {rnd['event_name']}")
     c.setAuthor("Golf Match Captain")
 
-    cpp = cfg.cards_per_page
-
     if cpp == 1:
-        # ── One card per page ─────────────────────────────────────
+        # ── 18-hole: one card per page, fold guide at midpoint ────
         for match in matches:
             _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg)
+            # Fold guide line at page midpoint
+            fold_y = PAGE_H / 2
+            c.setDash(3, 5)
+            c.setStrokeColor(C_GRAY_M)
+            c.setLineWidth(0.5)
+            c.line(MARGIN_X, fold_y, PAGE_W - MARGIN_X, fold_y)
+            c.setDash()
+            c.setFont("Helvetica", 6)
+            c.setFillColor(C_GRAY_D)
+            c.drawString(MARGIN_X, fold_y + 2, "— fold —")
             c.showPage()
 
     else:
-        # ── N cards per page (2 or 3) ─────────────────────────────
-        CUT_GAP   = 12 if cpp == 3 else 14
-        card_h    = _estimate_card_height(matches, rnd, cfg)
-        top_start = PAGE_H - cfg.margin_top
+        # ── 9-hole: two cards per page, sequential placement ──────
+        # Each card placed immediately below the actual foot_y of the
+        # previous card (+ CUT_GAP).  No height estimation involved →
+        # no overlap possible regardless of format or player count.
+        CUT_GAP = 14
+        est_h   = _estimate_card_height(matches, rnd, cfg)
 
-        # Compute y_start for each slot on the page
-        def slot_start(slot: int) -> float:
-            return top_start - slot * (card_h + CUT_GAP)
-
-        def draw_cut_line(after_slot: int):
-            cut_y = slot_start(after_slot) - card_h - CUT_GAP / 2
+        def _cut_line(foot_y: float):
+            cut_y = foot_y - CUT_GAP / 2
             c.setDash(4, 4)
             c.setStrokeColor(C_GRAY_M)
             c.setLineWidth(0.7)
@@ -690,24 +692,26 @@ def generate_round_scorecards(
             c.setFillColor(C_GRAY_D)
             c.drawString(MARGIN_X, cut_y + 2, "✂")
 
-        def draw_blank(slot: int):
-            mid_y = slot_start(slot) - card_h / 2
-            c.setFont("Helvetica", 7)
-            c.setFillColor(C_GRAY_M)
-            c.drawCentredString(PAGE_W / 2, mid_y, "[ no match ]")
-
         for i in range(0, len(matches), cpp):
+            current_y = PAGE_H - cfg.margin_top
+
             for slot in range(cpp):
                 mi = i + slot
                 if mi < len(matches):
-                    _draw_scorecard(c, matches[mi], rnd, tee_a, tee_b, total, cfg,
-                                    y_start=slot_start(slot))
+                    foot_y = _draw_scorecard(
+                        c, matches[mi], rnd, tee_a, tee_b, total, cfg,
+                        y_start=current_y,
+                    )
                 else:
-                    draw_blank(slot)
+                    # Odd match count — blank lower slot
+                    foot_y = current_y - est_h
+                    c.setFont("Helvetica", 7)
+                    c.setFillColor(C_GRAY_M)
+                    c.drawCentredString(PAGE_W / 2, current_y - est_h / 2, "[ no match ]")
 
-                # Cut line after every slot except the last
                 if slot < cpp - 1:
-                    draw_cut_line(slot)
+                    _cut_line(foot_y)
+                    current_y = foot_y - CUT_GAP
 
             c.showPage()
 
