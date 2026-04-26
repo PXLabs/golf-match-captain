@@ -47,9 +47,6 @@ def clear_all_data() -> None:
     for table in tables:
         execute(f"DELETE FROM {table}")
 
-    # Reset SQLite autoincrement counters
-    execute("DELETE FROM sqlite_sequence")
-
 
 def is_seeded() -> bool:
     """Return True if the database already contains player data."""

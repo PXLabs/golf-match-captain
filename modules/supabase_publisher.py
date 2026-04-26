@@ -239,7 +239,7 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
         LEFT JOIN course   c  ON c.course_id = r.course_id
         LEFT JOIN tee_deck ta ON ta.tee_id   = r.tee_id_a
         LEFT JOIN tee_deck tb ON tb.tee_id   = r.tee_id_b
-        WHERE  r.round_id = ?
+        WHERE  r.round_id = %s
         """,
         (gmc_round_id,),
     )
@@ -264,7 +264,7 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
         LEFT JOIN player pa2 ON pa2.player_id = m.team_a_player2_id
         LEFT JOIN player pb1 ON pb1.player_id = m.team_b_player1_id
         LEFT JOIN player pb2 ON pb2.player_id = m.team_b_player2_id
-        WHERE  m.round_id = ?
+        WHERE  m.round_id = %s
         ORDER  BY m.match_order ASC
         """,
         (gmc_round_id,),
@@ -288,7 +288,7 @@ def publish_pairings(gmc_round_id: int, event_id: int) -> dict:
 
     # ── Event handicap settings ──
     event_row = fetchone(
-        "SELECT handicap_mode, allowance_pct FROM event WHERE event_id = ?",
+        "SELECT handicap_mode, allowance_pct FROM event WHERE event_id = %s",
         (event_id,),
     )
     handicap_mode        = (event_row["handicap_mode"] if event_row else "PLAY_OFF_LOW")
@@ -400,7 +400,7 @@ def sync_results(event_id: int) -> dict:
 
     # ── GMC rounds for this event ──
     gmc_rounds = fetchall(
-        "SELECT round_id, round_number FROM round WHERE event_id = ? ORDER BY round_number",
+        "SELECT round_id, round_number FROM round WHERE event_id = %s ORDER BY round_number",
         (event_id,),
     )
     if not gmc_rounds:
@@ -439,7 +439,7 @@ def sync_results(event_id: int) -> dict:
             continue
 
         gmc_match = fetchone(
-            "SELECT match_id, result FROM match WHERE round_id = ? AND match_order = ?",
+            "SELECT match_id, result FROM match WHERE round_id = %s AND match_order = %s",
             (gmc_round_id, mnum),
         )
         if not gmc_match:

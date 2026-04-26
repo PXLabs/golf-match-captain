@@ -1,22 +1,55 @@
-# Golf Match Captain — Streamlit Cloud Deployment Guide
+# Golf Match Captain — Deployment Guide
 **Verma Cup 2026 | April 2026**
+
+---
+
+## Architecture Summary
+
+GMC now uses **Supabase PostgreSQL** as its database — not SQLite. This means:
+
+- Data **persists permanently** even when Streamlit Cloud restarts or redeploys
+- No more manual backup/restore routine before each round
+- No more "Quick Load" button needed
+- The schema lives in Supabase; GMC connects via `psycopg2`
 
 ---
 
 ## Prerequisites
 
 - Access to https://github.com/PXLabs/golf-match-captain (private repo)
-- Streamlit Community Cloud account — sign in at [share.streamlit.io](https://share.streamlit.io) using the GitHub account that has access to PXLabs
-- Your Anthropic API key (`sk-ant-...`)
+- Streamlit Community Cloud account — sign in at [share.streamlit.io](https://share.streamlit.io)
+- Anthropic API key (`sk-ant-...`)
+- Supabase project credentials (see Step 1)
 
 ---
 
-## Step 1 — Push the repo to GitHub
+## Step 1 — Set up the Supabase database
+
+### 1a. Create the schema
+
+1. Go to your Supabase project → **SQL Editor**
+2. Open the file `database/schema_supabase.sql` from this repo
+3. Paste the full contents into the SQL Editor and click **Run**
+4. You should see 9 tables created with no errors: `player`, `score_record`, `player_tag`, `course`, `tee_deck`, `event`, `event_player`, `round`, `match`
+
+### 1b. Get the connection string
+
+1. In Supabase → **Project Settings → Database → Connection string**
+2. Choose **Session mode** (not Transaction mode)
+3. Copy the URI — it looks like:
+   ```
+   postgresql://postgres.YOURREF:PASSWORD@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+   ```
+4. Keep this — you'll need it for Streamlit secrets
+
+---
+
+## Step 2 — Push the repo to GitHub
 
 ```bash
 cd "Golf App/golf_match_captain"
 git add .
-git commit -m "Add Streamlit Cloud config — Verma Cup 2026"
+git commit -m "Migrate to Supabase PostgreSQL — Verma Cup 2026"
 git push origin main
 ```
 
@@ -25,11 +58,11 @@ git push origin main
 
 ---
 
-## Step 2 — Create the app on Streamlit Community Cloud
+## Step 3 — Create the app on Streamlit Community Cloud
 
-1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with the PXLabs GitHub account
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in
 2. Click **New app**
-3. Set the fields as follows:
+3. Fill in:
 
 | Field | Value |
 |---|---|
@@ -38,94 +71,90 @@ git push origin main
 | Main file path | `app.py` |
 | App URL (optional) | e.g. `verma-golf-captain` |
 
-4. Click **Deploy** — Streamlit installs `requirements.txt` and boots the app (~2 mins)
+4. Click **Deploy** — Streamlit installs `requirements.txt` (~2 mins)
 
 ---
 
-## Step 3 — Add secrets in Streamlit Cloud
+## Step 4 — Add secrets in Streamlit Cloud
 
-**Do this before anyone uses the app.** The AI Advisor and Scorecard pages will error without the API key.
+**Do this before first use.** The app will error without these.
 
 1. In your app dashboard, click **⋮ → Settings → Secrets**
-2. Paste the following with your real values:
+2. Paste the following, replacing each placeholder with your real values:
 
 ```toml
-ANTHROPIC_API_KEY = "sk-ant-YOUR_REAL_KEY_HERE"
-SCOREBOARD_PASSWORD = ""
+ANTHROPIC_API_KEY    = "sk-ant-YOUR_KEY_HERE"
+SUPABASE_URL         = "https://YOURREF.supabase.co"
+SUPABASE_SERVICE_KEY = "eyYOUR_SERVICE_ROLE_KEY"
+SUPABASE_DB_URL      = "postgresql://postgres.YOURREF:PASSWORD@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+SCOREBOARD_PASSWORD  = ""
 ```
+
+- `SUPABASE_DB_URL` — the Session pooler URI from Step 1b
+- `SUPABASE_SERVICE_KEY` — from Supabase → Project Settings → API → **service_role** key (not anon)
+- `SUPABASE_URL` — from Supabase → Project Settings → API → Project URL
 
 3. Click **Save** — the app restarts automatically
 
 ---
 
-## Step 4 — Verify the deployment
+## Step 5 — Seed the Verma Cup data
+
+On first launch, the Supabase database will be empty. You need to load the event data once:
+
+1. Open GMC → **⚙️ Admin & Archive** (sidebar)
+2. Find the **Load Verma Cup 2026** section
+3. Click **🏆 Load Verma Cup 2026 Data**
+
+This populates: 12 players, 7 courses + 2 extra courses, the Verma Cup event, and all 7 rounds.
+
+> **This only needs to be done once.** Data now lives in Supabase — it survives restarts, redeployments, and inactivity.
+
+---
+
+## Step 6 — Verify the deployment
 
 Check these pages load without errors:
 
-- [ ] Dashboard (home) — welcome screen loads
-- [ ] Roster Manager — no database error
-- [ ] Course Library — loads
-- [ ] Event Setup — loads
-- [ ] Match Analysis — loads
-- [ ] Results — loads
+- [ ] Dashboard — event summary shows Verma Cup 2026
+- [ ] Roster Manager — 12 players listed
+- [ ] Course Library — 9 courses listed
+- [ ] Event Setup — Verma Cup 2026 active, 6 players per team
+- [ ] Match Analysis — AI Advisor loads
+- [ ] Results — round tabs visible
 - [ ] Scoreboard — loads
 
 ---
 
-## Step 5 — Set up event data before May 2
+## Step 7 — Add Round 1 pairings
 
-Once deployed, configure the Verma Cup event in GMC:
+Before May 2:
 
-1. **Roster Manager** — add all 12 players with their handicap indices (from CONTEXT.md Section 4)
-2. **Course Library** — add the 6 official courses (Ballyliffin Glashedy, Ballyliffin Old, Rosapenna Sandy Hills, Cruit Island, Portsalon, Rosapenna St Patricks)
-3. **Event Setup** — create the Verma Cup 2026 event, assign teams, configure the 7 rounds
-4. **Admin → Download Snapshot** — take a backup once setup is complete (see below)
+1. **Results** page → **R1 tab** → add the 6v6 draw for the warm-up round
+2. Click **Publish to Supabase** to lock the round and make it visible in the scoring app
 
 ---
 
-## Database Backup & Restore (important for the trip)
+## Database — no backup needed
 
-GMC uses SQLite stored at `data/golf_captain.db`. On Streamlit Community Cloud the database **resets if the app container restarts** from scratch (e.g. after a new deployment or extended inactivity).
+Because data is now stored in Supabase PostgreSQL (not on the Streamlit container), you **do not need to take manual database backups**. The data persists regardless of what happens to the Streamlit app container.
 
-**The Admin page (sidebar → ⚙️ Admin & Archive) already has full backup and restore built in:**
+If you ever need to reset and re-seed (e.g. to correct a mistake):
 
-### Daily backup routine (before each round)
-1. Open GMC → **⚙️ Admin & Archive**
-2. Section **💾 Database Archive Restore** → click **⬇️ Download golf_captain.db**
-3. Save the file locally (or to OneDrive) — name it with the date e.g. `golf_captain_backup_20260503.db`
+1. Go to Admin → Load Verma Cup 2026 → check **"Clear existing data first"**
+2. Click **Load** — this wipes all GMC data in Supabase and re-seeds from scratch
 
-### If the database resets
-1. Open GMC → **⚙️ Admin & Archive**
-2. Section **💾 Database Archive Restore** → upload your most recent `.db` backup file
-3. Click **⚠️ Restore Database File** — the app reloads with your data restored
-
-**Rule: download a backup every morning before setting pairings. Takes 10 seconds.**
+> Note: this will clear match results too. Only do this before any rounds have been played.
 
 ---
 
-## Do NOT redeploy during the trip (May 2–9)
+## Redeploying during the trip (May 2–9)
 
-A new deployment resets the container. If you must push a fix during the trip:
-1. Download a database backup first
-2. Push the fix
-3. Restore the backup immediately after the app reboots
+You can now redeploy safely at any time — the database is on Supabase, not the container. No backup step needed before pushing a fix.
 
 ---
 
-## Step 6 — Share the URL
+## Step 8 — Share the URL
 
-Share the private Streamlit URL with Peter Callahan and Bill Stanton only.
+Share the Streamlit URL with Peter Callahan and Bill Stanton only.
 URL format: `https://verma-golf-captain.streamlit.app`
-
----
-
-## Next steps after GMC is live
-
-| Step | Task |
-|---|---|
-| 1 | Provision Supabase — run `verma-shared/superbase/verma_cup_schema.sql` then `verma_cup_seed_data.sql` |
-| 2 | Add `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` to Streamlit secrets and Vercel env vars |
-| 3 | Build GMC Supabase module — Publish Pairings + Lock Round |
-| 4 | Build GMC Sync Results function |
-| 5 | Build Weather App Scoreboard tab |
-| 6 | Build Verma Scoring App (photo scan → review → tally) |

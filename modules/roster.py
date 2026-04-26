@@ -4,7 +4,6 @@ Golf Match Captain | Phase 1A
 """
 
 from __future__ import annotations
-import sqlite3
 from database.db import fetchall, fetchone, execute, executemany
 
 # ---------------------------------------------------------------
@@ -79,18 +78,18 @@ def add_player(
     """Insert a new player. Returns the new player_id."""
     sql = """
         INSERT INTO player (name, cpga_id, current_index, tee_preference, notes)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
     """
     return execute(sql, (name.strip(), cpga_id.strip(), current_index,
                          tee_preference.strip(), notes.strip()))
 
 
-def get_player(player_id: int) -> sqlite3.Row | None:
+def get_player(player_id: int) -> dict | None:
     """Return a single player row by ID."""
-    return fetchone("SELECT * FROM player WHERE player_id = ?", (player_id,))
+    return fetchone("SELECT * FROM player WHERE player_id = %s", (player_id,))
 
 
-def list_players() -> list[sqlite3.Row]:
+def list_players() -> list[dict]:
     """Return all players ordered by name."""
     return fetchall("SELECT * FROM player ORDER BY name ASC")
 
@@ -106,10 +105,10 @@ def update_player(
     """Update an existing player record."""
     sql = """
         UPDATE player
-        SET name = ?, cpga_id = ?, current_index = ?,
-            tee_preference = ?, notes = ?,
-            updated_at = datetime('now')
-        WHERE player_id = ?
+        SET name = %s, cpga_id = %s, current_index = %s,
+            tee_preference = %s, notes = %s,
+            updated_at = NOW()
+        WHERE player_id = %s
     """
     execute(sql, (name.strip(), cpga_id.strip(), current_index,
                   tee_preference.strip(), notes.strip(), player_id))
@@ -120,17 +119,17 @@ def delete_player(player_id: int) -> None:
     Delete a player and all associated records (cascade).
     Use with caution — also removes score records and tags.
     """
-    execute("DELETE FROM player WHERE player_id = ?", (player_id,))
+    execute("DELETE FROM player WHERE player_id = %s", (player_id,))
 
 
 # ---------------------------------------------------------------
 # Player Tags
 # ---------------------------------------------------------------
 
-def get_tags_for_player(player_id: int) -> list[sqlite3.Row]:
+def get_tags_for_player(player_id: int) -> list[dict]:
     """Return all tags for a player, ordered by type."""
     return fetchall(
-        "SELECT * FROM player_tag WHERE player_id = ? ORDER BY tag_type, tag_value",
+        "SELECT * FROM player_tag WHERE player_id = %s ORDER BY tag_type, tag_value",
         (player_id,),
     )
 
@@ -139,14 +138,14 @@ def add_tag(player_id: int, tag_type: str, tag_value: str) -> int:
     """Add a tag to a player. Returns new tag_id."""
     sql = """
         INSERT INTO player_tag (player_id, tag_type, tag_value)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
     """
     return execute(sql, (player_id, tag_type.strip(), tag_value.strip()))
 
 
 def remove_tag(tag_id: int) -> None:
     """Remove a specific tag by its ID."""
-    execute("DELETE FROM player_tag WHERE tag_id = ?", (tag_id,))
+    execute("DELETE FROM player_tag WHERE tag_id = %s", (tag_id,))
 
 
 def get_tags_grouped(player_id: int) -> dict[str, list[dict]]:
@@ -187,7 +186,7 @@ def add_score_record(
     sql = """
         INSERT INTO score_record
             (player_id, date, course, tee_deck, posted_score, differential)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     """
     return execute(sql, (player_id, date, course.strip(), tee_deck.strip(),
                          posted_score, differential))
@@ -196,7 +195,7 @@ def add_score_record(
 def _enforce_score_cap(player_id: int) -> None:
     """Remove oldest records if player already has MAX_SCORE_RECORDS."""
     count_row = fetchone(
-        "SELECT COUNT(*) as cnt FROM score_record WHERE player_id = ?", (player_id,)
+        "SELECT COUNT(*) as cnt FROM score_record WHERE player_id = %s", (player_id,)
     )
     if count_row and count_row["cnt"] >= MAX_SCORE_RECORDS:
         # Delete oldest record(s) to stay within cap
@@ -206,21 +205,21 @@ def _enforce_score_cap(player_id: int) -> None:
             DELETE FROM score_record
             WHERE record_id IN (
                 SELECT record_id FROM score_record
-                WHERE player_id = ?
+                WHERE player_id = %s
                 ORDER BY date ASC, record_id ASC
-                LIMIT ?
+                LIMIT %s
             )
             """,
             (player_id, excess),
         )
 
 
-def get_score_records(player_id: int) -> list[sqlite3.Row]:
+def get_score_records(player_id: int) -> list[dict]:
     """Return all score records for a player, newest first."""
     return fetchall(
         """
         SELECT * FROM score_record
-        WHERE player_id = ?
+        WHERE player_id = %s
         ORDER BY date DESC, record_id DESC
         """,
         (player_id,),
@@ -229,7 +228,7 @@ def get_score_records(player_id: int) -> list[sqlite3.Row]:
 
 def delete_score_record(record_id: int) -> None:
     """Remove a single score record."""
-    execute("DELETE FROM score_record WHERE record_id = ?", (record_id,))
+    execute("DELETE FROM score_record WHERE record_id = %s", (record_id,))
 
 
 def get_differentials(player_id: int) -> list[float]:

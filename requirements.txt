@@ -13,6 +13,9 @@ python-dotenv>=1.0.0
 # Supabase — shared data layer (publish pairings, sync results)
 supabase>=2.0.0
 
+# PostgreSQL driver — replaces SQLite, connects to Supabase PostgreSQL
+psycopg2-binary>=2.9.0
+
 # NOTE: playwright is intentionally excluded from this file.
 # Golf Canada handicap sync (golf_canada.py) requires playwright but
 # detects its absence gracefully — the app runs in mock mode without it.

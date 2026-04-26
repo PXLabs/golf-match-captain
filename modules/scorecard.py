@@ -278,7 +278,7 @@ def calculate_match(
     from database.db import fetchone as db_fetchone
 
     # Fetch round to get tee deck
-    rnd = db_fetchone("SELECT * FROM round WHERE round_id = ?", (round_id,))
+    rnd = db_fetchone("SELECT * FROM round WHERE round_id = %s", (round_id,))
     if not rnd:
         return None
 
@@ -545,7 +545,7 @@ def save_scorecard_result(
     }
 
     execute(
-        "UPDATE match SET hole_scores = ?, result = ?, result_detail = ? WHERE match_id = ?",
+        "UPDATE match SET hole_scores = %s, result = %s, result_detail = %s WHERE match_id = %s",
         (json.dumps(blob), calculation.final_result,
          calculation.result_detail, match_id),
     )
@@ -553,7 +553,7 @@ def save_scorecard_result(
 
 def get_hole_scores(match_id: int) -> dict | None:
     """Return the parsed hole_scores blob for a match, or None."""
-    row = fetchone("SELECT hole_scores FROM match WHERE match_id = ?", (match_id,))
+    row = fetchone("SELECT hole_scores FROM match WHERE match_id = %s", (match_id,))
     if not row or not row["hole_scores"]:
         return None
     try:

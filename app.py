@@ -39,6 +39,8 @@ def _show_welcome():
     )
 
 
+
+
 st.title("⛳ Golf Match Captain")
 st.caption("AI-Powered Pairing & Analysis Tool")
 st.markdown("---")

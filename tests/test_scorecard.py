@@ -294,7 +294,7 @@ if calc:
     check_true("Blob running_score is list",        isinstance(blob["running_score"], list))
 
     # Match record updated with result
-    m_updated = fetchone("SELECT result, result_detail, hole_scores FROM match WHERE match_id = ?",
+    m_updated = fetchone("SELECT result, result_detail, hole_scores FROM match WHERE match_id = %s",
                           (m["match_id"],))
     check("Match result updated in DB",        m_updated["result"], calc.final_result)
     check_true("Match result_detail updated",  len(m_updated["result_detail"]) > 0)

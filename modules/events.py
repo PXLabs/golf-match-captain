@@ -10,7 +10,6 @@ Handles:
 """
 
 from __future__ import annotations
-import sqlite3
 from database.db import fetchall, fetchone, execute
 
 # ---------------------------------------------------------------
@@ -43,22 +42,22 @@ def create_event(
         INSERT INTO event
             (name, start_date, team_a_name, team_b_name,
              handicap_mode, allowance_pct, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+        VALUES (%s, %s, %s, %s, %s, %s, 'ACTIVE')
         """,
         (name.strip(), start_date, team_a_name.strip(),
          team_b_name.strip(), handicap_mode, allowance_pct),
     )
 
 
-def get_event(event_id: int) -> sqlite3.Row | None:
-    return fetchone("SELECT * FROM event WHERE event_id = ?", (event_id,))
+def get_event(event_id: int) -> dict | None:
+    return fetchone("SELECT * FROM event WHERE event_id = %s", (event_id,))
 
 
-def list_events(status: str | None = None) -> list[sqlite3.Row]:
+def list_events(status: str | None = None) -> list[dict]:
     """Return events. Optionally filter by status (ACTIVE / COMPLETED / ARCHIVED)."""
     if status:
         return fetchall(
-            "SELECT * FROM event WHERE status = ? ORDER BY start_date DESC",
+            "SELECT * FROM event WHERE status = %s ORDER BY start_date DESC",
             (status,),
         )
     return fetchall("SELECT * FROM event ORDER BY start_date DESC")
@@ -77,9 +76,9 @@ def update_event(
     execute(
         """
         UPDATE event
-        SET name = ?, start_date = ?, team_a_name = ?, team_b_name = ?,
-            handicap_mode = ?, allowance_pct = ?, status = ?
-        WHERE event_id = ?
+        SET name = %s, start_date = %s, team_a_name = %s, team_b_name = %s,
+            handicap_mode = %s, allowance_pct = %s, status = %s
+        WHERE event_id = %s
         """,
         (name.strip(), start_date, team_a_name.strip(), team_b_name.strip(),
          handicap_mode, allowance_pct, status, event_id),
@@ -88,7 +87,7 @@ def update_event(
 
 def delete_event(event_id: int) -> None:
     """Delete event and all rounds / matches within it (cascade)."""
-    execute("DELETE FROM event WHERE event_id = ?", (event_id,))
+    execute("DELETE FROM event WHERE event_id = %s", (event_id,))
 
 
 # ---------------------------------------------------------------
@@ -106,8 +105,8 @@ def assign_player(event_id: int, player_id: int, team: str) -> None:
     execute(
         """
         INSERT INTO event_player (event_id, player_id, team)
-        VALUES (?, ?, ?)
-        ON CONFLICT(event_id, player_id) DO UPDATE SET team = excluded.team
+        VALUES (%s, %s, %s)
+        ON CONFLICT (event_id, player_id) DO UPDATE SET team = EXCLUDED.team
         """,
         (event_id, player_id, team),
     )
@@ -115,7 +114,7 @@ def assign_player(event_id: int, player_id: int, team: str) -> None:
 
 def remove_player_from_event(event_id: int, player_id: int) -> None:
     execute(
-        "DELETE FROM event_player WHERE event_id = ? AND player_id = ?",
+        "DELETE FROM event_player WHERE event_id = %s AND player_id = %s",
         (event_id, player_id),
     )
 
@@ -123,12 +122,12 @@ def remove_player_from_event(event_id: int, player_id: int) -> None:
 def set_player_role(event_id: int, player_id: int, role: str) -> None:
     """Update a player's role (e.g. 'Captain', 'Alternate Captain', 'Player')."""
     execute(
-        "UPDATE event_player SET role = ? WHERE event_id = ? AND player_id = ?",
+        "UPDATE event_player SET role = %s WHERE event_id = %s AND player_id = %s",
         (role, event_id, player_id)
     )
 
 
-def get_event_players(event_id: int) -> list[sqlite3.Row]:
+def get_event_players(event_id: int) -> list[dict]:
     """
     Return all players assigned to an event, joined with player details.
     Each row includes: player_id, name, current_index, tee_preference,
@@ -140,14 +139,14 @@ def get_event_players(event_id: int) -> list[sqlite3.Row]:
                p.cpga_id, ep.team, ep.role
         FROM event_player ep
         JOIN player p ON p.player_id = ep.player_id
-        WHERE ep.event_id = ?
+        WHERE ep.event_id = %s
         ORDER BY ep.team, p.name
         """,
         (event_id,),
     )
 
 
-def get_event_players_by_team(event_id: int) -> dict[str, list[sqlite3.Row]]:
+def get_event_players_by_team(event_id: int) -> dict[str, list[dict]]:
     """
     Return a dict with keys 'A' and 'B', each containing their player rows.
     """
@@ -158,13 +157,13 @@ def get_event_players_by_team(event_id: int) -> dict[str, list[sqlite3.Row]]:
     }
 
 
-def get_unassigned_players(event_id: int) -> list[sqlite3.Row]:
+def get_unassigned_players(event_id: int) -> list[dict]:
     """Return players in the global roster not yet assigned to this event."""
     return fetchall(
         """
         SELECT * FROM player
         WHERE player_id NOT IN (
-            SELECT player_id FROM event_player WHERE event_id = ?
+            SELECT player_id FROM event_player WHERE event_id = %s
         )
         ORDER BY name ASC
         """,
@@ -192,25 +191,25 @@ def add_round(
         INSERT INTO round
             (event_id, course_id, date, format_code, round_number,
              holes, tee_id_a, tee_id_b)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (event_id, course_id, date, format_code, round_number,
          holes, tee_id_a, tee_id_b),
     )
 
 
-def get_round(round_id: int) -> sqlite3.Row | None:
-    return fetchone("SELECT * FROM round WHERE round_id = ?", (round_id,))
+def get_round(round_id: int) -> dict | None:
+    return fetchone("SELECT * FROM round WHERE round_id = %s", (round_id,))
 
 
-def list_rounds(event_id: int) -> list[sqlite3.Row]:
+def list_rounds(event_id: int) -> list[dict]:
     """Return all rounds for an event in day order."""
     return fetchall(
         """
         SELECT r.*, c.name as course_name
         FROM round r
         JOIN course c ON c.course_id = r.course_id
-        WHERE r.event_id = ?
+        WHERE r.event_id = %s
         ORDER BY r.round_number ASC, r.date ASC
         """,
         (event_id,),
@@ -230,9 +229,9 @@ def update_round(
     execute(
         """
         UPDATE round
-        SET course_id = ?, date = ?, format_code = ?, round_number = ?,
-            holes = ?, tee_id_a = ?, tee_id_b = ?
-        WHERE round_id = ?
+        SET course_id = %s, date = %s, format_code = %s, round_number = %s,
+            holes = %s, tee_id_a = %s, tee_id_b = %s
+        WHERE round_id = %s
         """,
         (course_id, date, format_code, round_number,
          holes, tee_id_a, tee_id_b, round_id),
@@ -240,7 +239,7 @@ def update_round(
 
 
 def delete_round(round_id: int) -> None:
-    execute("DELETE FROM round WHERE round_id = ?", (round_id,))
+    execute("DELETE FROM round WHERE round_id = %s", (round_id,))
 
 
 # ---------------------------------------------------------------
@@ -264,7 +263,7 @@ def get_event_summary(event_id: int) -> dict:
     completed_rounds = fetchall(
         """
         SELECT r.round_id FROM round r
-        WHERE r.event_id = ?
+        WHERE r.event_id = %s
           AND EXISTS (
               SELECT 1 FROM match m
               WHERE m.round_id = r.round_id AND m.result IS NOT NULL

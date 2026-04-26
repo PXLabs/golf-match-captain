@@ -10,7 +10,6 @@ Handles:
 """
 
 from __future__ import annotations
-import sqlite3
 from database.db import fetchall, fetchone, execute
 
 # ---------------------------------------------------------------
@@ -57,7 +56,7 @@ def create_match(
              team_a_player1_id, team_a_player2_id,
              team_b_player1_id, team_b_player2_id,
              notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (round_id, match_order,
          team_a_player1_id, team_a_player2_id,
@@ -66,14 +65,14 @@ def create_match(
     )
 
 
-def get_match(match_id: int) -> sqlite3.Row | None:
-    return fetchone("SELECT * FROM match WHERE match_id = ?", (match_id,))
+def get_match(match_id: int) -> dict | None:
+    return fetchone("SELECT * FROM match WHERE match_id = %s", (match_id,))
 
 
-def list_matches(round_id: int) -> list[sqlite3.Row]:
+def list_matches(round_id: int) -> list[dict]:
     """Return all matches for a round in draw order."""
     return fetchall(
-        "SELECT * FROM match WHERE round_id = ? ORDER BY match_order ASC",
+        "SELECT * FROM match WHERE round_id = %s ORDER BY match_order ASC",
         (round_id,),
     )
 
@@ -89,12 +88,12 @@ def update_match_players(
     execute(
         """
         UPDATE match
-        SET team_a_player1_id = ?,
-            team_a_player2_id = ?,
-            team_b_player1_id = ?,
-            team_b_player2_id = ?,
-            notes = ?
-        WHERE match_id = ?
+        SET team_a_player1_id = %s,
+            team_a_player2_id = %s,
+            team_b_player1_id = %s,
+            team_b_player2_id = %s,
+            notes = %s
+        WHERE match_id = %s
         """,
         (team_a_player1_id, team_a_player2_id,
          team_b_player1_id, team_b_player2_id,
@@ -117,8 +116,8 @@ def record_result(
     execute(
         """
         UPDATE match
-        SET result = ?, result_detail = ?
-        WHERE match_id = ?
+        SET result = %s, result_detail = %s
+        WHERE match_id = %s
         """,
         (result, result_detail.strip(), match_id),
     )
@@ -127,13 +126,13 @@ def record_result(
 def clear_result(match_id: int) -> None:
     """Remove a previously entered result (mark as pending)."""
     execute(
-        "UPDATE match SET result = NULL, result_detail = '' WHERE match_id = ?",
+        "UPDATE match SET result = NULL, result_detail = '' WHERE match_id = %s",
         (match_id,),
     )
 
 
 def delete_match(match_id: int) -> None:
-    execute("DELETE FROM match WHERE match_id = ?", (match_id,))
+    execute("DELETE FROM match WHERE match_id = %s", (match_id,))
 
 
 # ---------------------------------------------------------------
@@ -318,7 +317,7 @@ def get_matches_with_players(round_id: int) -> list[dict]:
         LEFT JOIN player pa2 ON pa2.player_id = m.team_a_player2_id
         LEFT JOIN player pb1 ON pb1.player_id = m.team_b_player1_id
         LEFT JOIN player pb2 ON pb2.player_id = m.team_b_player2_id
-        WHERE m.round_id = ?
+        WHERE m.round_id = %s
         ORDER BY m.match_order ASC
         """,
         (round_id,),

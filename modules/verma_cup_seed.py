@@ -280,7 +280,7 @@ def load_verma_cup(force: bool = False) -> dict:
         )
 
     # Mark event as ACTIVE
-    execute("UPDATE event SET status = 'ACTIVE' WHERE event_id = ?", (event_id,))
+    execute("UPDATE event SET status = 'ACTIVE' WHERE event_id = %s", (event_id,))
 
     # ── Extra courses (personal course library) ──
     for course_name, location, tee_decks, _recommended_tee in EXTRA_COURSES:

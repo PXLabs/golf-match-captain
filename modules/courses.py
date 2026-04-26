@@ -10,7 +10,6 @@ Handles:
 
 from __future__ import annotations
 import json
-import sqlite3
 from database.db import fetchall, fetchone, execute
 
 # ---------------------------------------------------------------
@@ -20,29 +19,29 @@ from database.db import fetchall, fetchone, execute
 def add_course(name: str, location: str = "") -> int:
     """Insert a new course. Returns the new course_id."""
     return execute(
-        "INSERT INTO course (name, location) VALUES (?, ?)",
-        (name.strip(), location.strip()),
+        "INSERT INTO course (name, location) VALUES (%s, %s)",
+        (name.strip(), location.strip() or None),
     )
 
 
-def get_course(course_id: int) -> sqlite3.Row | None:
-    return fetchone("SELECT * FROM course WHERE course_id = ?", (course_id,))
+def get_course(course_id: int) -> dict | None:
+    return fetchone("SELECT * FROM course WHERE course_id = %s", (course_id,))
 
 
-def list_courses() -> list[sqlite3.Row]:
+def list_courses() -> list[dict]:
     return fetchall("SELECT * FROM course ORDER BY name ASC")
 
 
 def update_course(course_id: int, name: str, location: str = "") -> None:
     execute(
-        "UPDATE course SET name = ?, location = ? WHERE course_id = ?",
+        "UPDATE course SET name = %s, location = %s WHERE course_id = %s",
         (name.strip(), location.strip(), course_id),
     )
 
 
 def delete_course(course_id: int) -> None:
     """Delete a course and all its tee decks (cascade)."""
-    execute("DELETE FROM course WHERE course_id = ?", (course_id,))
+    execute("DELETE FROM course WHERE course_id = %s", (course_id,))
 
 
 # ---------------------------------------------------------------
@@ -68,7 +67,7 @@ def add_tee_deck(
     return execute(
         """
         INSERT INTO tee_deck (course_id, name, rating, slope, par, stroke_index, total_yards, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (course_id, name.strip(), rating, slope, par, json.dumps(stroke_index), total_yards, notes),
     )
@@ -76,14 +75,14 @@ def add_tee_deck(
 
 def get_tee_deck(tee_id: int) -> dict | None:
     """Return a tee deck with stroke_index parsed from JSON."""
-    row = fetchone("SELECT * FROM tee_deck WHERE tee_id = ?", (tee_id,))
+    row = fetchone("SELECT * FROM tee_deck WHERE tee_id = %s", (tee_id,))
     return _parse_tee_deck(row) if row else None
 
 
 def list_tee_decks(course_id: int) -> list[dict]:
     """Return all tee decks for a course, with stroke_index parsed."""
     rows = fetchall(
-        "SELECT * FROM tee_deck WHERE course_id = ? ORDER BY rating DESC",
+        "SELECT * FROM tee_deck WHERE course_id = %s ORDER BY rating DESC",
         (course_id,),
     )
     return [_parse_tee_deck(r) for r in rows]
@@ -103,15 +102,15 @@ def update_tee_deck(
     execute(
         """
         UPDATE tee_deck
-        SET name = ?, rating = ?, slope = ?, par = ?, stroke_index = ?, total_yards = ?, notes = ?
-        WHERE tee_id = ?
+        SET name = %s, rating = %s, slope = %s, par = %s, stroke_index = %s, total_yards = %s, notes = %s
+        WHERE tee_id = %s
         """,
         (name.strip(), rating, slope, par, json.dumps(stroke_index), total_yards, notes, tee_id),
     )
 
 
 def delete_tee_deck(tee_id: int) -> None:
-    execute("DELETE FROM tee_deck WHERE tee_id = ?", (tee_id,))
+    execute("DELETE FROM tee_deck WHERE tee_id = %s", (tee_id,))
 
 
 # ---------------------------------------------------------------
@@ -138,7 +137,7 @@ def get_tee_deck_for_handicap(tee_id: int) -> dict | None:
     }
 
 
-def _parse_tee_deck(row: sqlite3.Row) -> dict:
+def _parse_tee_deck(row: dict) -> dict:
     """Convert a tee_deck Row to a plain dict with stroke_index parsed."""
     d = dict(row)
     try:
