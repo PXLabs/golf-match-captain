@@ -2,12 +2,12 @@
 scorecard_pdf.py — Match Play Scorecard PDF Generator
 Golf Match Captain | Verma Cup 2026
 
-Two output modes:
-  FULL SIZE  — one card per page, portrait letter (8.5 × 11")
-  COMPACT    — two cards per page, portrait letter, with cut line between
-               Each card ≈ 8.5 × 5.5" — scorecard-book size, caddie-friendly
+Three output sizes:
+  FULL    — 1 card per page, portrait letter (8.5 × 11") — full-size, easy to read
+  COMPACT — 2 cards per page, portrait letter (~66% scale) — caddie-friendly
+  SMALL   — 3 cards per page, portrait letter (~50% scale) — rain/pocket size
 
-Both modes:
+All sizes:
   - Pre-printed stroke dots in top-right corner of each score box
   - Open dot (○) = half stroke (9-hole only) — wins a tied hole
   - Two dots (●●) = 2 strokes (very high HC)
@@ -80,18 +80,19 @@ class CardConfig:
     margin_top:  int
     dot_r:       float
     # font sizes
-    f_id:        float
-    f_team:      float
-    f_info:      float
-    f_player:    float
-    f_code:      float
-    f_hdr:       float
-    f_si:        float
-    f_note:      float
-    f_footer:    float
-    two_per_page: bool
+    f_id:          float
+    f_team:        float
+    f_info:        float
+    f_player:      float
+    f_code:        float
+    f_hdr:         float
+    f_si:          float
+    f_note:        float
+    f_footer:      float
+    cards_per_page: int   # 1 = full, 2 = compact, 3 = small
 
 
+# ── Full size — 1 per page ────────────────────────────────────────
 FULL = CardConfig(
     rh_header=62,  rh_note=11, rh_seclabel=13, rh_hole=18, rh_si=13,
     rh_score=33,   rh_best=17, rh_sep=3,       rh_result=20, rh_status=15,
@@ -99,9 +100,10 @@ FULL = CardConfig(
     dot_r=2.5,
     f_id=22, f_team=11, f_info=8, f_player=9, f_code=6.5,
     f_hdr=8, f_si=7, f_note=6, f_footer=7.5,
-    two_per_page=False,
+    cards_per_page=1,
 )
 
+# ── Compact (~66%) — 2 per page ───────────────────────────────────
 COMPACT = CardConfig(
     rh_header=46,  rh_note=9,  rh_seclabel=11, rh_hole=14, rh_si=10,
     rh_score=29,   rh_best=13, rh_sep=2,       rh_result=15, rh_status=11,
@@ -109,8 +111,25 @@ COMPACT = CardConfig(
     dot_r=2.0,
     f_id=16, f_team=9.5, f_info=7, f_player=8.5, f_code=6,
     f_hdr=7.5, f_si=6.5, f_note=5.5, f_footer=7,
-    two_per_page=True,
+    cards_per_page=2,
 )
+
+# ── Small (~50%) — 3 per page ─────────────────────────────────────
+SMALL = CardConfig(
+    rh_header=34,  rh_note=7,  rh_seclabel=8,  rh_hole=10, rh_si=7,
+    rh_score=21,   rh_best=10, rh_sep=2,       rh_result=11, rh_status=8,
+    rh_footer=34,  section_gap=4,  margin_top=12,
+    dot_r=1.6,
+    f_id=12, f_team=7.5, f_info=5.5, f_player=7, f_code=5,
+    f_hdr=6, f_si=5.5, f_note=4.5, f_footer=5.5,
+    cards_per_page=3,
+)
+
+_SIZE_MAP: dict[str, CardConfig] = {
+    "full":    FULL,
+    "compact": COMPACT,
+    "small":   SMALL,
+}
 
 
 # ================================================================
@@ -577,14 +596,53 @@ def _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg: CardConfig,
 # Public API
 # ================================================================
 
-def generate_round_scorecards(round_id: int, compact: bool = False) -> bytes:
+def _estimate_card_height(matches: list, rnd: dict, cfg: CardConfig) -> float:
+    """
+    Estimate the rendered height of one scorecard (points) from config constants.
+    Used to position multiple cards on a single page.
+    """
+    is_singles    = not bool(matches[0].get("a2_name") or matches[0].get("b2_name"))
+    n_player_rows = 2 if is_singles else 4
+    n_best_rows   = 0 if is_singles else 2
+
+    # One grid section height
+    def section_h():
+        return (
+            cfg.rh_seclabel + cfg.rh_hole + cfg.rh_si +
+            n_player_rows * cfg.rh_score +
+            n_best_rows   * cfg.rh_best +
+            cfg.rh_sep + cfg.rh_result + cfg.rh_status
+        )
+
+    h = (
+        cfg.rh_header + cfg.rh_note +
+        section_h() +
+        cfg.rh_footer + 4   # 4pt gap before footer
+    )
+    if rnd["holes"] == 18:
+        h += cfg.section_gap + section_h()
+    return h
+
+
+def generate_round_scorecards(
+    round_id: int,
+    size: str = "full",
+    compact: bool = False,   # legacy — maps to size="compact"
+) -> bytes:
     """
     Generate a multi-page PDF of scorecards for every match in the round.
 
-    compact=False  → one full-size card per page (portrait letter)
-    compact=True   → two compact cards per page (portrait letter, cut line between)
-                     each card ≈ 8.5 × 5.5" — scorecard-book / caddie size
+    size="full"    → 1 full-size card per page (portrait letter)
+    size="compact" → 2 cards per page (~66% scale, caddie-friendly)
+    size="small"   → 3 cards per page (~50% scale, rain/pocket size)
+
+    The legacy `compact=True` kwarg still works and maps to size="compact".
     """
+    if compact and size == "full":
+        size = "compact"
+
+    cfg = _SIZE_MAP.get(size, FULL)
+
     data    = get_scorecard_data(round_id)
     rnd     = data["round"]
     matches = data["matches"]
@@ -596,7 +654,6 @@ def generate_round_scorecards(round_id: int, compact: bool = False) -> bytes:
     if not matches:
         raise ValueError("No matches found for this round. Add the draw first.")
 
-    cfg   = COMPACT if compact else FULL
     total = len(matches)
 
     buf = BytesIO()
@@ -604,73 +661,53 @@ def generate_round_scorecards(round_id: int, compact: bool = False) -> bytes:
     c.setTitle(f"Scorecards – Round {rnd['round_number']} – {rnd['event_name']}")
     c.setAuthor("Golf Match Captain")
 
-    if not compact:
-        # ── Full size: one card per page ──────────────────────────
+    cpp = cfg.cards_per_page
+
+    if cpp == 1:
+        # ── One card per page ─────────────────────────────────────
         for match in matches:
             _draw_scorecard(c, match, rnd, tee_a, tee_b, total, cfg)
             c.showPage()
 
     else:
-        # ── Compact: two cards per page ───────────────────────────
-        # Calculate card height so we can stack two with a cut line
-        # Use a dummy draw to find the bottom of one card, then derive
-        # the start y for card 2.
-        #
-        # Stack: [margin_top] [card 1] [cut line gap=14] [card 2] [margin_bot]
-        # We need to know card 1 height to place card 2.
-        #
-        # Estimate card height (9-hole fourball):
-        is_singles = not bool(matches[0].get("a2_name") or matches[0].get("b2_name"))
-        n_player_rows = 2 if is_singles else 4
-        n_best_rows   = 0 if is_singles else 2
-        card_h = (
-            cfg.rh_header + cfg.rh_note +
-            cfg.rh_seclabel + cfg.rh_hole + cfg.rh_si +
-            n_player_rows * cfg.rh_score +
-            n_best_rows   * cfg.rh_best +
-            cfg.rh_sep + cfg.rh_result + cfg.rh_status +
-            cfg.rh_footer + 4   # the 4pt gap before footer
-        )
-        if rnd["holes"] == 18:
-            # Two sections — add second section height
-            card_h += (
-                cfg.section_gap +
-                cfg.rh_seclabel + cfg.rh_hole + cfg.rh_si +
-                n_player_rows * cfg.rh_score +
-                n_best_rows   * cfg.rh_best +
-                cfg.rh_sep + cfg.rh_result + cfg.rh_status
-            )
+        # ── N cards per page (2 or 3) ─────────────────────────────
+        CUT_GAP   = 12 if cpp == 3 else 14
+        card_h    = _estimate_card_height(matches, rnd, cfg)
+        top_start = PAGE_H - cfg.margin_top
 
-        CUT_GAP = 14   # gap between two cards; cut line drawn in the middle
-        top_start  = PAGE_H - cfg.margin_top
-        bot_start  = top_start - card_h - CUT_GAP
+        # Compute y_start for each slot on the page
+        def slot_start(slot: int) -> float:
+            return top_start - slot * (card_h + CUT_GAP)
 
-        for i in range(0, len(matches), 2):
-            # Card 1 (top half of page)
-            _draw_scorecard(c, matches[i], rnd, tee_a, tee_b, total, cfg,
-                            y_start=top_start)
-
-            # Dashed cut line
-            cut_y = top_start - card_h - CUT_GAP / 2
+        def draw_cut_line(after_slot: int):
+            cut_y = slot_start(after_slot) - card_h - CUT_GAP / 2
             c.setDash(4, 4)
             c.setStrokeColor(C_GRAY_M)
             c.setLineWidth(0.7)
             c.line(MARGIN_X, cut_y, PAGE_W - MARGIN_X, cut_y)
-            # Small scissors symbol
             c.setDash()
             c.setFont("Helvetica", 7)
             c.setFillColor(C_GRAY_D)
             c.drawString(MARGIN_X, cut_y + 2, "✂")
 
-            # Card 2 (bottom half of page)
-            if i + 1 < len(matches):
-                _draw_scorecard(c, matches[i + 1], rnd, tee_a, tee_b, total, cfg,
-                                y_start=bot_start)
-            else:
-                # Odd number of matches — blank bottom half
-                c.setFont("Helvetica", 8)
-                c.setFillColor(C_GRAY_M)
-                c.drawCentredString(PAGE_W / 2, bot_start - card_h / 2, "[ no match ]")
+        def draw_blank(slot: int):
+            mid_y = slot_start(slot) - card_h / 2
+            c.setFont("Helvetica", 7)
+            c.setFillColor(C_GRAY_M)
+            c.drawCentredString(PAGE_W / 2, mid_y, "[ no match ]")
+
+        for i in range(0, len(matches), cpp):
+            for slot in range(cpp):
+                mi = i + slot
+                if mi < len(matches):
+                    _draw_scorecard(c, matches[mi], rnd, tee_a, tee_b, total, cfg,
+                                    y_start=slot_start(slot))
+                else:
+                    draw_blank(slot)
+
+                # Cut line after every slot except the last
+                if slot < cpp - 1:
+                    draw_cut_line(slot)
 
             c.showPage()
 
